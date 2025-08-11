@@ -1,2 +1,2 @@
 # poly-route
-pluggable protoco agnostic proxy
+pluggable protocol agnostic proxy
