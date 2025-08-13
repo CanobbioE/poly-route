@@ -1,0 +1,16 @@
+---
+version: v2
+modules:
+    - path: ./testing/mock/proto/
+      name: buf.build/canobbioe/mock
+      lint:
+          use:
+              - BASIC
+          disallow_comment_ignores: true
+      breaking:
+          use:
+              - FILE
+          except:
+              - EXTENSION_NO_DELETE
+              - FIELD_SAME_DEFAULT
+deps:

@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package mockserver.v1;
+
+service MockService {
+  rpc Invoke(ReadRequest) returns (ReadResponse);
+  rpc BiDirectionalStream(stream ReadRequest) returns (stream ReadResponse);
+  rpc ClientStream(stream ReadRequest) returns (ReadResponse);
+  rpc ServerStream(ReadRequest) returns (stream ReadResponse);
+}
+
+message ReadRequest {
+  string resource_id = 1;
+}
+
+message ReadResponse {
+  string data = 1;
+}

@@ -1,0 +1,228 @@
+---
+version: '2'
+linters:
+    enable:
+        # Default
+        - errcheck
+        - govet
+        - ineffassign
+        - staticcheck
+        - unused
+
+        # Extra
+        - asasalint
+        - asciicheck
+        - bidichk
+        - bodyclose
+        - containedctx
+        - contextcheck
+        - copyloopvar
+        - dogsled
+        - dupword
+        - durationcheck
+        - errchkjson
+        - errorlint
+        - forbidigo
+        - ginkgolinter
+        - gocheckcompilerdirectives
+        - gocritic
+        - godot
+        - goheader
+        - gosec
+        - gosmopolitan
+        - grouper
+        - inamedparam
+        - intrange
+        - lll
+        - loggercheck
+        - makezero
+        - mirror
+        - nakedret
+        - nestif
+        - nilerr
+        - noctx
+        - nolintlint
+        - nosprintfhostport
+        - perfsprint
+        - predeclared
+        - reassign
+        - revive
+        - rowserrcheck
+        - sqlclosecheck
+        - testpackage
+        - unconvert
+        - usestdlibvars
+        - wastedassign
+        - whitespace
+
+    settings:
+        lll:
+            line-length: 120
+
+        staticcheck:
+            exclude:
+                - ST1000 # no need for docs here
+
+        forbidigo:
+            forbid:
+                - pattern: ^(fmt\.Print(|f|ln)|print|println)$
+
+        gosec:
+            excludes:
+                - G104 # Unhandled errors - is checked by revive.unhandled-error with some exceptions
+                - G115 # Integer overflow by conversion
+
+        govet:
+            enable-all: true
+
+        gocritic:
+            enabled-tags:
+                - diagnostic
+                - style
+                - performance
+                - experimental
+                - opinionated
+            disabled-checks:
+                - whyNoLint # Is checked by nolintlint with excluding lll much easier
+                - deferInLoop # Checked by revive already
+                - dupBranchBody # Checked by revive already
+
+        nakedret:
+            max-func-lines: 8 # Counting also declaration, not just body
+
+        nolintlint:
+            allow-no-explanation: [lll]
+            require-explanation: true
+            require-specific: true
+
+        exhaustive:
+            check:
+                - switch
+                - map
+            default-signifies-exhaustive: true
+
+        revive:
+            rules:
+                # Default
+                - name: blank-imports
+                - name: context-as-argument
+                - name: context-keys-type
+                - name: dot-imports
+                - name: empty-block
+                - name: error-naming
+                - name: error-return
+                - name: error-strings
+                - name: errorf
+                - name: exported
+                  arguments: [checkPublicInterface]
+                - name: increment-decrement
+                - name: indent-error-flow
+                - name: range
+                - name: receiver-naming
+                - name: redefines-builtin-id
+                - name: superfluous-else
+                - name: time-naming
+                - name: unexported-return
+                - name: unreachable-code
+                - name: unused-parameter
+                - name: var-declaration
+                - name: var-naming
+
+                # Extra
+                - name: atomic
+                - name: bool-literal-in-expr
+                - name: comment-spacings
+                - name: confusing-naming
+                - name: confusing-results
+                - name: constant-logical-expr
+                - name: cyclomatic
+                  arguments: [30]
+                - name: datarace
+                - name: deep-exit
+                - name: defer
+                - name: duplicated-imports
+                - name: early-return
+                - name: empty-lines
+                - name: get-return
+                - name: identical-branches
+                - name: if-return
+                - name: import-alias-naming
+                  arguments:
+                      - ^([a-z][a-z0-9]{0,}|\.)$
+                - name: import-shadowing
+                - name: modifies-parameter
+                - name: modifies-value-receiver
+                - name: nested-structs
+                - name: optimize-operands-order
+                - name: range-val-address
+                - name: range-val-in-closure
+                - name: redundant-import-alias
+                - name: string-of-int
+                - name: struct-tag
+                - name: time-equal
+                - name: unconditional-recursion
+                - name: unexported-naming
+                - name: unhandled-error # It is OK not to check errors from some specific cases
+                  arguments:
+                      - (?i)fmt\.(F|S)?Print(ln|f)?
+                      - (bytes\.Buffer|strings\.Builder)\.Write(Byte|String|Rune)?
+                - name: unnecessary-stmt
+                - name: unused-receiver
+                - name: use-any
+                - name: useless-break
+                - name: waitgroup-by-value
+
+        usestdlibvars:
+            default-rpc-path: true
+            sql-isolation-level: true
+
+    exclusions:
+        paths:
+            - third_party$
+            - builtin$
+            - examples$
+        generated: strict
+        rules:
+            # Ignore FieldAlignment in tests.
+            - linters:
+                  - govet
+              text: '^fieldalignment:'
+              path: .*_test.go
+
+
+            # Dupword checks for multiple words in comment or text, which sometimes happen.
+            - linters:
+                  - dupword
+              text: Duplicate words \(END\) found
+
+            # Do not enforce doc block on const/func/structs etc. in test files.
+            - linters:
+                  - revive
+                  - staticcheck
+              text: '^(exported|SA1019):'
+              path: .*_test.go
+
+
+issues:
+    max-issues-per-linter: 0
+    max-same-issues: 0
+
+formatters:
+    enable:
+        - gci
+        - gofmt
+    settings:
+        gci:
+            # Keep in sync with Makefile
+            sections:
+                - standard
+                - default
+                - prefix(github.com/CanobbioE/poly-route/)
+                - blank
+                - dot
+    exclusions:
+        generated: strict
+        paths:
+            - third_party$
+            - builtin$
+            - examples$
