@@ -164,7 +164,7 @@ func testHTTPClient(regionHeader string) error {
 		return err
 	}
 
-	postReq, err := http.NewRequest(http.MethodGet, polyRouteHTPServerAddr, http.NoBody) //nolint:noctx // test file
+	postReq, err := http.NewRequest(http.MethodPost, polyRouteHTPServerAddr, http.NoBody) //nolint:noctx // test file
 	if err != nil {
 		return err
 	}
