@@ -10,7 +10,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	pb "github.com/CanobbioE/poly-route/testing/mock/proto-gen/mockserver/v1"
+	pb "github.com/CanobbioE/poly-route/example/mock/proto-gen/mockserver/v1"
 )
 
 // mockServer implements [pb.MockServiceServer].

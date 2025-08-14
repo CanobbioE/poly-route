@@ -9,7 +9,7 @@ Our constraint was that the region must be inferred by a value provided by anoth
 
 ### Start the test servers
 ```shell
-go run ./testing/server
+go run ./example/server
 ```
 
 Make sure the following ports are available:
@@ -21,14 +21,14 @@ Make sure the following ports are available:
 
 ### Start the proxy with the test config
 ```shell
-CONFIG_FILE_PATH=./testing/config.yaml go run .
+CONFIG_FILE_PATH=./example/config.yaml go run .
 ```
 
 Make sure port `9999` is available.
 
 ### Start the test client
 ```shell
-go run ./testing/client
+go run ./example/client
 ```
 
 The output should look something like:
@@ -60,4 +60,4 @@ data:"Response for res-123"
 ```
 
 ### Next steps
-Feel free to play around with the test [config.yaml](testing/config.yaml), just remember to update the [test client](testing/client/main.go) and the [test servers](testing/server/main.go)
+Feel free to play around with the test [config.yaml](example/config.yaml), just remember to update the [test client](example/client/main.go) and the [test servers](example/server/main.go)

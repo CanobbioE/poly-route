@@ -13,8 +13,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
+	pb "github.com/CanobbioE/poly-route/example/mock/proto-gen/mockserver/v1"
 	"github.com/CanobbioE/poly-route/internal/forwarder"
-	pb "github.com/CanobbioE/poly-route/testing/mock/proto-gen/mockserver/v1"
 )
 
 const polyRouteGRPCServerAddr = "localhost:9999"

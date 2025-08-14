@@ -7,16 +7,16 @@ fmt:
 	@gofmt -s -w $$(go list -f "{{.Dir}}" ./...)
 
 gci:
-	@gci write -s standard -s default -s "prefix(github.com/CanobbioE/poly-route)" -s blank -s dot ./internal ./testing .
+	@gci write -s standard -s default -s "prefix(github.com/CanobbioE/poly-route)" -s blank -s dot ./internal ./example .
 
 lint-all:
 	@golangci-lint run --timeout 2m0s ./...
 
 lint-diff:
-	@golangci-lint run --new-from-rev=$$(git merge-base HEAD master) --timeout 2m0s ./...
+	@golangci-lint run --new-from-rev=$$(git merge-base HEAD main) --timeout 2m0s ./...
 
 start-mock:
-	go run ./testing/
+	go run ./example/
 
 generate-proto: _proto fmt gci
 

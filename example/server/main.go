@@ -11,7 +11,7 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/CanobbioE/poly-route/testing/mock"
+	"github.com/CanobbioE/poly-route/example/mock"
 )
 
 func main() {

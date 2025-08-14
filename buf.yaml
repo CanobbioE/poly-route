@@ -1,7 +1,7 @@
 ---
 version: v2
 modules:
-    - path: ./testing/mock/proto/
+    - path: ./example/mock/proto/
       name: buf.build/canobbioe/mock
       lint:
           use:

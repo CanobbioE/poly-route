@@ -6,7 +6,7 @@ managed:
         - file_option: go_package_prefix
           value: .
 plugins:
-  - remote: buf.build/protocolbuffers/go
-    out: testing/mock/proto-gen
+  - remote: buf.build/protocolbuffers/gos
+    out: example/mock/proto-gen
   - remote: buf.build/grpc/go
-    out: testing/mock/proto-gen
+    out: example/mock/proto-gen
