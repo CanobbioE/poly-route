@@ -21,70 +21,57 @@ import (
 // MetadataRegionKey is the metadata key used to retrieve the region from the api call.
 const MetadataRegionKey = "poly-route-region"
 
-func findGRPCBackend(cfg *config.ServiceCfg, method, region string) (string, bool) {
-	for _, d := range cfg.GRPC.Destinations {
-		if d.Entrypoint == method {
-			v, ok := d.Mapping[region]
-			return v, ok
-		}
-	}
-	return "", false
-}
-
-// GRPCHandler implements a reverse transparent proxy.
-type GRPCHandler struct {
-	cfg            *config.ServiceCfg
+// GRPCForwarder implements a reverse transparent proxy for GRPC.
+type GRPCForwarder struct {
+	cfg            *config.ProtocolCfg
 	regionResolver routing.RegionResolver
 }
 
-// GRPC creates a new GRPCHandler.
-func GRPC(cfg *config.ServiceCfg) (*GRPCHandler, error) {
-	// TODO: make it a dependency
-	resolver, err := routing.NewResolver(cfg.RegionRetriever)
-	if err != nil {
-		return nil, err
-	}
-	return &GRPCHandler{
+// GRPC creates a new GRPCForwarder.
+func GRPC(cfg *config.ProtocolCfg, resolver routing.RegionResolver) *GRPCForwarder {
+	return &GRPCForwarder{
 		cfg:            cfg,
 		regionResolver: resolver,
-	}, nil
+	}
 }
 
 // Handler returns a [grpc.StreamHandler] transparent reverse proxy.
-func (x *GRPCHandler) Handler(_ any, stream grpc.ServerStream) error {
-	method, ok := grpc.MethodFromServerStream(stream)
-	if !ok {
-		return errors.New("cannot get method from stream")
-	}
+func (x *GRPCForwarder) Handler() grpc.StreamHandler {
+	return func(_ any, stream grpc.ServerStream) error {
+		method, ok := grpc.MethodFromServerStream(stream)
+		if !ok {
+			return errors.New("cannot get method from stream")
+		}
 
-	// copy context
-	incomingCtx := stream.Context()
-	md, _ := metadata.FromIncomingContext(incomingCtx)
-	outgoingCtx := metadata.NewOutgoingContext(incomingCtx, md.Copy())
+		// copy context
+		incomingCtx := stream.Context()
+		md, _ := metadata.FromIncomingContext(incomingCtx)
+		outgoingCtx := metadata.NewOutgoingContext(incomingCtx, md.Copy())
 
-	// resolve region from metadata
-	var region string
-	if vals := md.Get(MetadataRegionKey); len(vals) > 0 {
-		region = vals[0]
-	}
-	if region == "" {
-		return fmt.Errorf("no region found in metadata, set %s", MetadataRegionKey)
-	}
+		// resolve region from metadata
+		var region string
+		if vals := md.Get(MetadataRegionKey); len(vals) > 0 {
+			region = vals[0]
+		}
+		if region == "" {
+			return fmt.Errorf("no region found in metadata, set %s", MetadataRegionKey)
+		}
 
-	resolvedRegion, err := x.regionResolver.ResolveRegion(outgoingCtx, region)
-	if err != nil {
-		return err
-	}
+		resolvedRegion, err := x.regionResolver.ResolveRegion(outgoingCtx, region)
+		if err != nil {
+			return err
+		}
 
-	backend, ok := findGRPCBackend(x.cfg, method, resolvedRegion)
-	if !ok {
-		return fmt.Errorf("no backend for method %s region %s", method, region)
-	}
+		backend, ok := x.findBackend(method, resolvedRegion)
+		if !ok {
+			return fmt.Errorf("no backend for method %s region %s", method, region)
+		}
 
-	return x.forwardGRPCStream(outgoingCtx, backend, method, stream)
+		return x.forwardGRPCStream(outgoingCtx, backend, method, stream)
+	}
 }
 
-func (*GRPCHandler) forwardGRPCStream(
+func (*GRPCForwarder) forwardGRPCStream(
 	ctx context.Context,
 	backendAddr, method string,
 	serverStream grpc.ServerStream,
@@ -118,8 +105,8 @@ func (*GRPCHandler) forwardGRPCStream(
 	}
 
 	// Bidirectional copy
-	cli2SrvErrCh := fwdStream(clientStream, serverStream)
-	srv2CliErrCh := fwdStream(serverStream, clientStream)
+	cli2SrvErrCh := forwardStream(clientStream, serverStream)
+	srv2CliErrCh := forwardStream(serverStream, clientStream)
 
 	// listen for errors: io.EOF from either chan is good
 	// anything else is an issue
@@ -145,12 +132,22 @@ func (*GRPCHandler) forwardGRPCStream(
 	return status.Errorf(codes.Internal, "gRPC proxying should never reach this stage.")
 }
 
+func (x *GRPCForwarder) findBackend(method, region string) (string, bool) {
+	for _, d := range x.cfg.Destinations {
+		if d.Entrypoint == method {
+			v, ok := d.Mapping[region]
+			return v, ok
+		}
+	}
+	return "", false
+}
+
 type senderReceiver interface {
 	SendMsg(m any) error
 	RecvMsg(m any) error
 }
 
-func fwdStream[S senderReceiver, D senderReceiver](src S, dst D) chan error {
+func forwardStream[S senderReceiver, D senderReceiver](src S, dst D) chan error {
 	errCh := make(chan error, 1)
 	go func() {
 		// client → backend

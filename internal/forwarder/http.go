@@ -18,8 +18,49 @@ const (
 	QueryParamRegionKey = "region"
 )
 
-func findHTTPBackend(cfg *config.ServiceCfg, path, region string) (string, bool) {
-	for _, d := range cfg.HTTP.Destinations {
+// HTTPForwarder implements a reverse transport proxy for HTTP.
+type HTTPForwarder struct {
+	cfg            *config.ProtocolCfg
+	regionResolver routing.RegionResolver
+}
+
+// HTTP creates a new HTTPForwarder.
+func HTTP(cfg *config.ProtocolCfg, resolver routing.RegionResolver) *HTTPForwarder {
+	return &HTTPForwarder{
+		cfg:            cfg,
+		regionResolver: resolver,
+	}
+}
+
+// Handler returns a [http.HandlerFunc] that uses a [httputil.ReverseProxy] to forward the incoming request.
+func (x *HTTPForwarder) Handler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		region := r.Header.Get(HeaderRegionKey)
+		if region == "" {
+			region = r.URL.Query().Get(QueryParamRegionKey)
+		}
+		if region == "" {
+			http.Error(w, "missing region (set "+HeaderRegionKey+" header or ?"+QueryParamRegionKey+"=)", http.StatusBadRequest)
+			return
+		}
+
+		resolvedRegion, err := x.regionResolver.ResolveRegion(r.Context(), region)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		target, ok := x.findBackend(r.URL.Path, resolvedRegion)
+		if !ok {
+			http.Error(w, "no backend for this path/region", http.StatusBadGateway)
+			return
+		}
+		httpForward(target, w, r)
+	}
+}
+
+func (x *HTTPForwarder) findBackend(path, region string) (string, bool) {
+	for _, d := range x.cfg.Destinations {
 		if strings.HasPrefix(path, d.Entrypoint) {
 			v, ok := d.Mapping[region]
 			return v, ok
@@ -41,6 +82,7 @@ func httpForward(target string, w http.ResponseWriter, r *http.Request) {
 		req.URL.Host = u.Host
 		req.URL.Path = origPath
 		req.URL.RawQuery = r.URL.RawQuery
+		// TODO: consider adding X-Forwarded-For
 		req.Header = r.Header
 		req.Host = u.Host
 	}
@@ -48,39 +90,4 @@ func httpForward(target string, w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 	proxy.ServeHTTP(w, r)
-}
-
-// HTTP frontend handler.
-// TODO: make a struct and add dependencies.
-func HTTP(cfg *config.ServiceCfg) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		region := r.Header.Get(HeaderRegionKey)
-		if region == "" {
-			region = r.URL.Query().Get(QueryParamRegionKey)
-		}
-		if region == "" {
-			http.Error(w, "missing region (set "+HeaderRegionKey+" header or ?"+QueryParamRegionKey+"=)", http.StatusBadRequest)
-			return
-		}
-
-		// TODO: dependency
-		resolver, err := routing.NewResolver(cfg.RegionRetriever)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		resolvedRegion, err := resolver.ResolveRegion(r.Context(), region)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		target, ok := findHTTPBackend(cfg, r.URL.Path, resolvedRegion)
-		if !ok {
-			http.Error(w, "no backend for this path/region", http.StatusBadGateway)
-			return
-		}
-		httpForward(target, w, r)
-	}
 }
