@@ -34,3 +34,11 @@ install-tools:
 	@go install github.com/daixiang0/gci@latest
 	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	@echo Installation completed
+
+build:
+	docker build -t canobbioe/poly-route:latest -f Dockerfile .
+
+publish:
+	- docker rmi canobbioe/poly-route
+	docker build -t canobbioe/poly-route:latest -f Dockerfile .
+	docker push canobbioe/poly-route

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"google.golang.org/grpc"
@@ -17,8 +18,15 @@ import (
 	"github.com/CanobbioE/poly-route/internal/forwarder"
 )
 
-const polyRouteGRPCServerAddr = "localhost:9999"
-const polyRouteHTPServerAddr = "http://localhost:8888"
+var (
+	polyRouteGRPCServerAddr string
+	polyRouteHTPServerAddr  string
+)
+
+func init() {
+	polyRouteHTPServerAddr = os.Getenv("HTTP_HOST")
+	polyRouteGRPCServerAddr = os.Getenv("GRPC_HOST")
+}
 
 func main() {
 	if err := testGrpcStream("europe-west1"); err != nil {
