@@ -7,7 +7,25 @@ Poly-Route provides a single global entrypoint for regional APIs. The region is 
 
 *Work in progress. Currently, supports gRPC and HTTP.*
 
-# What's in the box
+## Table of Contents
+- [What's in the box](#whats-in-the-box)
+- [Run the demo](#run-the-demo)
+    - [In Docker](#in-docker)
+    - [From CLI locally](#from-cli-locally)
+        - [Start the test servers](#start-the-test-servers)
+        - [Start the proxy with the test config](#start-the-proxy-with-the-test-config)
+        - [Start the test client](#start-the-test-client)
+- [Next steps](#next-steps)
+    - [More testing](#more-testing)
+    - [Setup](#setup)
+- [Roadmap](#roadmap)
+- [Configuration Guide](#configuration-guide)
+    - [HTTP](#http)
+    - [gRPC](#grpc)
+    - [Region Retriever](#region-retriever)
+    - [Flow](#flow)
+
+## What's in the box
 The proxy itself, fully configurable and pluggable (the bright pink box in the above image).
 
 You must provide your own region resolver and your own client and backend services
@@ -18,9 +36,9 @@ You must provide your own region resolver and your own client and backend servic
 * Services MUST be reachable from the proxy
 * The region resolver MUST BE reachable from the proxy
 
-# Run the demo
+## Run the demo
 
-## In Docker
+### In Docker
 Using the utility makefile:
 ```
 make test
@@ -40,9 +58,9 @@ This starts three services:
     - one HTTP server that returns region values
 - `test-client`: a client that will call all the backends through the proxy
 
-## From CLI locally
+### From CLI locally
 
-### Start the test servers
+#### Start the test servers
 ```shell
 go run ./example/server
 ```
@@ -54,14 +72,14 @@ The following ports must be available:
 - `9095`
 - `9091`
 
-### Start the proxy with the test config
+#### Start the proxy with the test config
 ```shell
 CONFIG_FILE_PATH=./example/config.yaml go run .
 ```
 
 Ports `9999` and `8888` must be available
 
-### Start the test client
+#### Start the test client
 ```shell
 go run ./example/client
 ```
@@ -94,9 +112,9 @@ data:"Response for res-123"
 {"backend": us, "addr": localhost:8081, "path": GET/}
 ```
 
-# Next steps
+## Next steps
 
-## More testing
+### More testing
 Experiment with [config.yaml](example/config.yaml) or [docker-config.yaml](example/docker-config.yaml). Update [test client](example/client/main.go) and [test servers](example/server/main.go) if needed
 
 You can also bypass the client and call the proxy directly
@@ -117,19 +135,80 @@ eu-west1
 us-east1
 ```
 
-## Setup
+### Setup
 Poly-Route is plug and play
 - create a region retrieval endpoint if you need one
 - define config.yaml
 - run the provided docker image in your stack
 
-# Roadmap
-- change config destinations from array to map
+
+
+## Roadmap
 - support nested keys in region resolver responses
-- add config explanation to README
 - support for GraphQL
 - logger configuration
 - support POST for region resolver
 - improve logs
 - improve error messages
 - support more protocols
+
+
+## Configuration Guide
+
+### HTTP
+
+```yaml
+http:
+  listen: "8888"
+  destinations:
+    /:
+      euw1: "http://localhost:8085"
+      use1: "http://localhost:8081"
+```
+
+Proxy listens on port 8888. All HTTP requests to `/` are routed by region:
+- `euw1` -> `http://localhost:8085`
+- `use1` -> `http://localhost:8081`
+
+### gRPC
+
+```yaml
+grpc:
+  listen: "9999"
+  destinations:
+    /mockserver.v1.MockService/Invoke":
+      euw1: "localhost:9095"
+      use1: "localhost:9091"
+```
+
+Proxy listens on port 9999. Each RPC method is routed to the correct backend by region.
+
+### Region Retriever
+
+```yaml
+region_retriever:
+  type: "http"
+  url: "http://localhost:1234/userinfo"
+  method: "GET"
+  query_param: "user_id"
+  region_resolver:
+    type: "map"
+    field: "country"
+    mapping:
+      europe-west1: "euw1"
+      eu-west1: "euw1"
+      us-east1: "use1"
+```
+
+Proxy queries `http://localhost:1234/userinfo?user_id=...`.  
+The `country` field in the response is mapped to an internal region key.
+- `europe-west1` or `eu-west1` -> `euw1`
+- `us-east1` -> `use1`
+
+### Flow
+
+1. Client sends HTTP or gRPC request to proxy
+2. Proxy calls region retriever to resolve region
+3. Resolver maps `country` to `euw1` or `use1`
+4. Proxy forwards request to backend defined under that region
+

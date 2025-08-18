@@ -84,11 +84,6 @@ func startHTTPProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver) *ht
 	}
 	go func() {
 		log.Println("http proxy listening on", server.Addr)
-		log.Println("http proxy forwarding to")
-		for _, d := range cfg.HTTP.Destinations {
-			log.Println("\t", d.Entrypoint)
-			log.Println("\t\t", d.Mapping)
-		}
 		if err := server.ListenAndServe(); err != nil {
 			log.Printf("failed to serve http: %v", err)
 			return
@@ -114,11 +109,6 @@ func startGRPCProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver) *gr
 	server := grpc.NewServer(grpc.UnknownServiceHandler(grpcHandler), grpc.ForceServerCodec(&codec.PassThrough{}))
 	go func() {
 		log.Println("gRPC proxy listening on", lis.Addr().String())
-		log.Println("gRPC proxy forwarding to")
-		for _, d := range cfg.GRPC.Destinations {
-			log.Println(d.Entrypoint)
-			log.Println(d.Mapping)
-		}
 		if err := server.Serve(lis); err != nil {
 			log.Printf("failed to serve grpc: %v", err)
 			return

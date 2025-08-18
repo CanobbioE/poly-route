@@ -62,7 +62,7 @@ func (x *GRPCForwarder) Handler() grpc.StreamHandler {
 			return fmt.Errorf("cannot resolve region %s: %w", region, err)
 		}
 
-		backend, ok := x.findBackend(method, resolvedRegion)
+		backend, ok := findBackend(x.cfg, method, resolvedRegion)
 		if !ok {
 			return fmt.Errorf("no backend for method %s region %s", method, region)
 		}
@@ -134,16 +134,6 @@ func (*GRPCForwarder) forwardGRPCStream(
 	}
 	// TODO: error message
 	return status.Errorf(codes.Internal, "gRPC proxying should never reach this stage.")
-}
-
-func (x *GRPCForwarder) findBackend(method, region string) (string, bool) {
-	for _, d := range x.cfg.Destinations {
-		if d.Entrypoint == method {
-			v, ok := d.Mapping[region]
-			return v, ok
-		}
-	}
-	return "", false
 }
 
 type senderReceiver interface {

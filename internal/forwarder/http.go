@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"strings"
 
 	"github.com/CanobbioE/poly-route/internal/config"
 	"github.com/CanobbioE/poly-route/internal/routing"
@@ -50,7 +49,7 @@ func (x *HTTPForwarder) Handler() http.HandlerFunc {
 			return
 		}
 
-		target, ok := x.findBackend(r.URL.Path, resolvedRegion)
+		target, ok := findBackend(x.cfg, r.URL.Path, resolvedRegion)
 		if !ok {
 			http.Error(w, "no backend for this path/region", http.StatusBadGateway)
 			return
@@ -59,14 +58,13 @@ func (x *HTTPForwarder) Handler() http.HandlerFunc {
 	}
 }
 
-func (x *HTTPForwarder) findBackend(path, region string) (string, bool) {
-	for _, d := range x.cfg.Destinations {
-		if strings.HasPrefix(path, d.Entrypoint) {
-			v, ok := d.Mapping[region]
-			return v, ok
-		}
+func findBackend(cfg *config.ProtocolCfg, entrypoint, region string) (string, bool) {
+	mapping, ok := cfg.Destinations[entrypoint]
+	if !ok {
+		return "", false
 	}
-	return "", false
+	v, ok := mapping[region]
+	return v, ok
 }
 
 func httpForward(target string, w http.ResponseWriter, r *http.Request) {

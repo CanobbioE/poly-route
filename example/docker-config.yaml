@@ -1,28 +1,23 @@
 http:
   listen: "8888"
   destinations:
-    - entrypoint: "/"
-      mapping:
-        euw1: "http://example-servers:8085"
-        use1: "http://example-servers:8081"
+    /:
+      euw1: "http://example-servers:8085"
+      use1: "http://example-servers:8081"
 
 grpc:
   listen: "9999"
   destinations:
-    - entrypoint: "/mockserver.v1.MockService/Invoke"
-      mapping:
+      /mockserver.v1.MockService/Invoke":
         euw1: "example-servers:9095"
         use1: "example-servers:9091"
-    - entrypoint: "/mockserver.v1.MockService/BiDirectionalStream"
-      mapping:
+      /mockserver.v1.MockService/BiDirectionalStream":
         euw1: "example-servers:9095"
         use1: "example-servers:9091"
-    - entrypoint: "/mockserver.v1.MockService/ClientStream"
-      mapping:
+      /mockserver.v1.MockService/ClientStream":
         euw1: "example-servers:9095"
         use1: "example-servers:9091"
-    - entrypoint: "/mockserver.v1.MockService/ServerStream"
-      mapping:
+      /mockserver.v1.MockService/ServerStream":
         euw1: "example-servers:9095"
         use1: "example-servers:9091"
 

@@ -9,14 +9,8 @@ import (
 
 // ProtocolCfg configures the incoming and outgoing proxy requests for a protocol.
 type ProtocolCfg struct {
-	Listen       string         `yaml:"listen"`
-	Destinations []*Destination `yaml:"destinations"`
-}
-
-// Destination is a protocol agnostic target for the proxy.
-type Destination struct {
-	Mapping    map[string]string `yaml:"mapping"`
-	Entrypoint string            `yaml:"entrypoint"`
+	Destinations map[string]map[string]string `yaml:"destinations"`
+	Listen       string                       `yaml:"listen"`
 }
 
 // RegionRetriever configures how and from where the region value should be retrieved.
