@@ -15,7 +15,7 @@ services:
     environment:
       - CONFIG_FILE_PATH=/app/config.yaml
 
-  test-servers:
+  example-servers:
     networks:
       - poly-route-network
     build:
@@ -29,7 +29,7 @@ services:
       - "9095:9095"
       - "9091:9091"
 
-  test-client:
+  example-client:
     networks:
       - poly-route-network
     build:
@@ -37,10 +37,10 @@ services:
       dockerfile: example/client/Dockerfile
     image: canobbioe/poly-route-example-client:latest
     environment:
-      - HTTP_HOST=poly-route:8888
+      - HTTP_HOST=http://poly-route:8888
       - GRPC_HOST=poly-route:9999
     depends_on:
-      - test-servers
+      - example-servers
       - poly-route
 
 networks:

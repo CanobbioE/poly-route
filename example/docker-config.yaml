@@ -3,33 +3,33 @@ http:
   destinations:
     - entrypoint: "/"
       mapping:
-        euw1: "http://test-server:8085"
-        use1: "http://test-server:8081"
+        euw1: "http://example-servers:8085"
+        use1: "http://example-servers:8081"
 
 grpc:
   listen: "9999"
   destinations:
     - entrypoint: "/mockserver.v1.MockService/Invoke"
       mapping:
-        euw1: "test-server:9095"
-        use1: "test-server:9091"
+        euw1: "example-servers:9095"
+        use1: "example-servers:9091"
     - entrypoint: "/mockserver.v1.MockService/BiDirectionalStream"
       mapping:
-        euw1: "test-server:9095"
-        use1: "test-server:9091"
+        euw1: "example-servers:9095"
+        use1: "example-servers:9091"
     - entrypoint: "/mockserver.v1.MockService/ClientStream"
       mapping:
-        euw1: "test-server:9095"
-        use1: "test-server:9091"
+        euw1: "example-servers:9095"
+        use1: "example-servers:9091"
     - entrypoint: "/mockserver.v1.MockService/ServerStream"
       mapping:
-        euw1: "test-server:9095"
-        use1: "test-server:9091"
+        euw1: "example-servers:9095"
+        use1: "example-servers:9091"
 
 
 region_retriever:
   type: "http"
-  url: "http://test-server:1234/userinfo"
+  url: "http://example-servers:1234/userinfo"
   method: "GET"
   query_param: "user_id"
   region_resolver:

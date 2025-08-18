@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 
@@ -92,34 +93,49 @@ func (x *httpResolver) ResolveRegion(ctx context.Context, param string) (string,
 	case http.MethodGet:
 		u, err := url.Parse(x.retrieverCfg.URL)
 		if err != nil {
-			return "", fmt.Errorf("failed to parse retriever endpoint (%s): %w", x.retrieverCfg.URL, err)
+			return "", fmt.Errorf("region resolver: failed to parse retriever endpoint (%s): %w", x.retrieverCfg.URL, err)
 		}
+
 		q := u.Query()
 		q.Set(x.retrieverCfg.QueryParam, param)
 		u.RawQuery = q.Encode()
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("region resolver: failed to create GET request: %w", err)
 		}
 		resp, err = x.client.Do(req)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("region resolver: failed to send GET request: %w", err)
 		}
+
 		// TODO: handle post with body params
 	default:
-		return "", fmt.Errorf("unsupported data retriever method: %s", x.retrieverCfg.Method)
+		return "", fmt.Errorf("region resolver: unsupported data retriever method: %s", x.retrieverCfg.Method)
 	}
 
-	defer resp.Body.Close() //nolint:errcheck // test files skip error check for simplicity
-	body, _ := io.ReadAll(resp.Body)
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			log.Printf("region resolver: failed to close response body: %v\n", err)
+		}
+	}()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("region resolver: failed to read response body: %w", err)
+	}
 
 	responseJSON := map[string]any{}
-	err := json.Unmarshal(body, &responseJSON)
+	err = json.Unmarshal(body, &responseJSON)
 	if err != nil {
-		return "", fmt.Errorf("unmarshal response failed: %w", err)
+		return "", fmt.Errorf("region resolver: unmarshal response failed: %w", err)
 	}
 
-	return x.resolve(responseJSON)
+	region, err := x.resolve(responseJSON)
+	if err != nil {
+		return "", fmt.Errorf("region resolver: failed to resolve response: %w", err)
+	}
+
+	return region, nil
 }
 
 func (x *httpResolver) resolve(m map[string]any) (string, error) {

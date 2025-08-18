@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,7 +47,7 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 
-	log.Println("Shutting down proxies...")
+	log.Println("shutting down proxies...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -63,24 +64,31 @@ func main() {
 
 func startHTTPProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver) *http.Server {
 	if cfg.HTTP == nil {
-		log.Println("HTTP proxy disabled")
+		log.Println("HTTP proxy not enabled")
 		return nil
 	}
-	var server *http.Server
+	mux := http.NewServeMux()
+	httpHandler := forwarder.HTTP(cfg.HTTP, resolver).Handler()
+	mux.HandleFunc("/", httpHandler)
+	addr := cfg.HTTP.Listen
+	if !strings.HasPrefix(cfg.HTTP.Listen, ":") {
+		addr = ":" + cfg.HTTP.Listen
+	}
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: 2 * time.Second,
+	}
 	go func() {
-		mux := http.NewServeMux()
-		httpHandler := forwarder.HTTP(cfg.HTTP, resolver).Handler()
-		mux.HandleFunc("/", httpHandler)
-
-		server = &http.Server{
-			Addr:              ":" + cfg.HTTP.Listen,
-			Handler:           mux,
-			ReadTimeout:       5 * time.Second,
-			WriteTimeout:      10 * time.Second,
-			IdleTimeout:       120 * time.Second,
-			ReadHeaderTimeout: 2 * time.Second,
-		}
 		log.Println("http proxy listening on", server.Addr)
+		log.Println("http proxy forwarding to")
+		for _, d := range cfg.HTTP.Destinations {
+			log.Println("\t", d.Entrypoint)
+			log.Println("\t\t", d.Mapping)
+		}
 		if err := server.ListenAndServe(); err != nil {
 			log.Printf("failed to serve http: %v", err)
 			return
@@ -92,21 +100,25 @@ func startHTTPProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver) *ht
 
 func startGRPCProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver) *grpc.Server {
 	if cfg.GRPC == nil {
-		log.Println("gRPC proxy disabled")
+		log.Println("gRPC proxy not enabled")
 		return nil
 	}
 
-	var server *grpc.Server
-	go func() {
-		lis, err := net.Listen("tcp", ":"+cfg.GRPC.Listen) //nolint:noctx // test files, there's no context
-		if err != nil {
-			log.Printf("failed to listen to %s: %v", cfg.GRPC.Listen, err)
-			return
-		}
+	lis, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", cfg.GRPC.Listen)
+	if err != nil {
+		log.Printf("failed to listen to %s: %v", cfg.GRPC.Listen, err)
+		return nil
+	}
 
-		grpcHandler := forwarder.GRPC(cfg.GRPC, resolver).Handler()
-		server = grpc.NewServer(grpc.UnknownServiceHandler(grpcHandler), grpc.ForceServerCodec(&codec.PassThrough{}))
-		log.Println("gRPC proxy listening on" + lis.Addr().String())
+	grpcHandler := forwarder.GRPC(cfg.GRPC, resolver).Handler()
+	server := grpc.NewServer(grpc.UnknownServiceHandler(grpcHandler), grpc.ForceServerCodec(&codec.PassThrough{}))
+	go func() {
+		log.Println("gRPC proxy listening on", lis.Addr().String())
+		log.Println("gRPC proxy forwarding to")
+		for _, d := range cfg.GRPC.Destinations {
+			log.Println(d.Entrypoint)
+			log.Println(d.Mapping)
+		}
 		if err := server.Serve(lis); err != nil {
 			log.Printf("failed to serve grpc: %v", err)
 			return

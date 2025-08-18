@@ -42,3 +42,13 @@ publish:
 	- docker rmi canobbioe/poly-route
 	docker build -t canobbioe/poly-route:latest -f Dockerfile .
 	docker push canobbioe/poly-route
+
+test:
+	- docker compose down
+	- docker rmi canobbioe/poly-route
+	- docker rmi canobbioe/example-servers
+	- docker rmi canobbioe/example-client
+	docker compose build
+	docker compose up
+
+

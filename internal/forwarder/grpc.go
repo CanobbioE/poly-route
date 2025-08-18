@@ -59,7 +59,7 @@ func (x *GRPCForwarder) Handler() grpc.StreamHandler {
 
 		resolvedRegion, err := x.regionResolver.ResolveRegion(outgoingCtx, region)
 		if err != nil {
-			return err
+			return fmt.Errorf("cannot resolve region %s: %w", region, err)
 		}
 
 		backend, ok := x.findBackend(method, resolvedRegion)
@@ -67,7 +67,11 @@ func (x *GRPCForwarder) Handler() grpc.StreamHandler {
 			return fmt.Errorf("no backend for method %s region %s", method, region)
 		}
 
-		return x.forwardGRPCStream(outgoingCtx, backend, method, stream)
+		err = x.forwardGRPCStream(outgoingCtx, backend, method, stream)
+		if err != nil {
+			return fmt.Errorf("forward grpc stream: %w", err)
+		}
+		return nil
 	}
 }
 

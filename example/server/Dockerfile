@@ -5,11 +5,11 @@ WORKDIR /go/src/github.com/CanobbioE/poly-route
 COPY . .
 WORKDIR /go/src/github.com/CanobbioE/poly-route/example/server
 
-RUN CGO_ENABLED=0 go build -o test-server -ldflags "-w -s"
+RUN CGO_ENABLED=0 go build -o example-server -ldflags "-w -s"
 
 FROM gcr.io/distroless/base-debian12:nonroot
 
-COPY --from=build-env --chown=nonroot /go/src/github.com/CanobbioE/poly-route/example/server/test-server /app/test-server
+COPY --from=build-env --chown=nonroot /go/src/github.com/CanobbioE/poly-route/example/server/example-server /app/example-server
 
 USER 65532
-ENTRYPOINT ["/app/test-server"]
+ENTRYPOINT ["/app/example-server"]

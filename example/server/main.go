@@ -16,11 +16,11 @@ import (
 
 func main() {
 	servers := []any{
-		mock.StartMockRegionRepository("localhost:1234"),
-		mock.StartMockHTTPBackend("localhost:8085", "eu"),
-		mock.StartMockHTTPBackend("localhost:8081", "us"),
-		mock.StartMockGRPCBackend("localhost:9095", "eu"),
-		mock.StartMockGRPCBackend("localhost:9091", "us"),
+		mock.StartMockRegionRepository(":1234"),
+		mock.StartMockHTTPBackend(":8085", "eu"),
+		mock.StartMockHTTPBackend(":8081", "us"),
+		mock.StartMockGRPCBackend(":9095", "eu"),
+		mock.StartMockGRPCBackend(":9091", "us"),
 	}
 
 	sigCh := make(chan os.Signal, 1)
