@@ -104,3 +104,13 @@ poly-route is a plug-and-play service:
 - create a region retrieval endpoint if you don't have one already
 - define your config.yaml
 - use the provided docker image in your architecture
+
+# Roadmap (aka TODO)
+- logger configuration
+- better logs
+- better error messages
+- support for graphql
+- support for other protocols
+- change config `destinations` from array to map
+- handle POST request to region resolver
+- handle nested keys in region resolver response
