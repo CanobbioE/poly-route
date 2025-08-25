@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -54,14 +55,17 @@ func NewResolver(cfg *config.RegionRetriever, opts ...ResolverOption) (RegionRes
 	case "http":
 		return newHTTPResolver(cfg, opts...)
 	case "static":
-		return newStaticResolver(cfg), nil
+		return newStaticResolver(cfg)
 	default:
 		return nil, fmt.Errorf("unknown resolver type: %s", cfg.Type)
 	}
 }
 
-func newStaticResolver(cfg *config.RegionRetriever) RegionResolver {
-	return &staticResolver{staticVal: cfg.Static}
+func newStaticResolver(cfg *config.RegionRetriever) (RegionResolver, error) {
+	if cfg.Static == "" {
+		return nil, errors.New("when using static resolver, static value must be defined")
+	}
+	return &staticResolver{staticVal: cfg.Static}, nil
 }
 
 func (x *staticResolver) ResolveRegion(_ context.Context, _ string) (string, error) {
