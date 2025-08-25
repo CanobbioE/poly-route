@@ -5,6 +5,13 @@ http:
       euw1: "http://localhost:8085"
       use1: "http://localhost:8081"
 
+graphql:
+  listen: "7777"
+  destinations:
+    /graph:
+      euw1: "http://localhost:7070/graphql"
+      use1: "http://localhost:7071/graphql"
+
 grpc:
   listen: "9999"
   destinations:

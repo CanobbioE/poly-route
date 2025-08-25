@@ -21,6 +21,8 @@ func main() {
 		mock.StartMockHTTPBackend(":8081", "us"),
 		mock.StartMockGRPCBackend(":9095", "eu"),
 		mock.StartMockGRPCBackend(":9091", "us"),
+		mock.StartMockGraphQLBackend(":7070", "eu"),
+		mock.StartMockGraphQLBackend(":7071", "us"),
 	}
 
 	sigCh := make(chan os.Signal, 1)

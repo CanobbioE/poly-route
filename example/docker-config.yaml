@@ -8,19 +8,25 @@ http:
 grpc:
   listen: "9999"
   destinations:
-      /mockserver.v1.MockService/Invoke":
+      /mockserver.v1.MockService/Invoke:
         euw1: "example-servers:9095"
         use1: "example-servers:9091"
-      /mockserver.v1.MockService/BiDirectionalStream":
+      /mockserver.v1.MockService/BiDirectionalStream:
         euw1: "example-servers:9095"
         use1: "example-servers:9091"
-      /mockserver.v1.MockService/ClientStream":
+      /mockserver.v1.MockService/ClientStream:
         euw1: "example-servers:9095"
         use1: "example-servers:9091"
-      /mockserver.v1.MockService/ServerStream":
+      /mockserver.v1.MockService/ServerStream:
         euw1: "example-servers:9095"
         use1: "example-servers:9091"
 
+graphql:
+  listen: "7777"
+  destinations:
+    /graph:
+      euw1: "http://example-servers:7070/graphql"
+      use1: "http://example-servers:7071/graphql"
 
 region_retriever:
   type: "http"

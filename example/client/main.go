@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
@@ -19,16 +20,23 @@ import (
 )
 
 var (
-	polyRouteGRPCServerAddr string
-	polyRouteHTPServerAddr  string
+	polyRouteGRPCServerAddr    string
+	polyRouteHTPServerAddr     string
+	polyRouteGraphQLServerAddr string
 )
 
 func init() {
 	polyRouteHTPServerAddr = os.Getenv("HTTP_HOST")
 	polyRouteGRPCServerAddr = os.Getenv("GRPC_HOST")
+	polyRouteGraphQLServerAddr = os.Getenv("GRAPHQL_HOST")
+
+	log.Println("initialized addresses:\n\thttp: " + polyRouteHTPServerAddr +
+		"\n\tgrpc: " + polyRouteGRPCServerAddr +
+		"\n\tgraphql: " + polyRouteGraphQLServerAddr)
 }
 
 func main() {
+	log.Println("Testing GRPC...")
 	if err := testGrpcStream("europe-west1"); err != nil {
 		log.Fatalf("failed to test against grpc stream europe-west1: %v", err)
 	}
@@ -42,11 +50,20 @@ func main() {
 		log.Fatalf("failed to test against grpc invoke us-east1: %v", err)
 	}
 
+	log.Println("Testing HTTP...")
 	if err := testHTTPClient("europe-west1"); err != nil {
 		log.Fatalf("failed to test against http europe-west1: %v", err)
 	}
 	if err := testHTTPClient("us-east1"); err != nil {
 		log.Fatalf("failed to test against http us-east1: %v", err)
+	}
+
+	log.Println("Testing GraphQL...")
+	if err := testGraphQLClient("europe-west1"); err != nil {
+		log.Fatalf("failed to test against graphql over http europe-west1: %v", err)
+	}
+	if err := testGraphQLClient("us-east1"); err != nil {
+		log.Fatalf("failed to test against graphql over http us-east1: %v", err)
 	}
 }
 
@@ -91,7 +108,7 @@ func testGrpcStream(regionMappingKey string) error {
 		if err != nil {
 			return fmt.Errorf("error receiving response: %w", err)
 		}
-		log.Printf("Received BiDirectionalStream: %s", resp.GetData())
+		log.Printf(" Received BiDirectionalStream: %s", resp.GetData())
 	}
 
 	cliStream, err := client.ClientStream(ctx)
@@ -109,7 +126,7 @@ func testGrpcStream(regionMappingKey string) error {
 		return fmt.Errorf("failed to close send: %w", err)
 	}
 
-	log.Printf("Received ClientStream: %s", resp.GetData())
+	log.Printf(" Received ClientStream: %s", resp.GetData())
 
 	srvStream, err := client.ServerStream(ctx, &pb.ReadRequest{ResourceId: "res-123"})
 	if err != nil {
@@ -124,7 +141,7 @@ func testGrpcStream(regionMappingKey string) error {
 		if err != nil {
 			return fmt.Errorf("error receiving response: %w", err)
 		}
-		log.Printf("Received ServerStream: %s", resp.GetData())
+		log.Printf(" Received ServerStream: %s", resp.GetData())
 	}
 
 	return nil
@@ -152,7 +169,7 @@ func testGrpcInvoke(regionMappingKey string) error {
 		return err
 	}
 
-	log.Println(authResp)
+	log.Println(" " + authResp.String())
 	return nil
 }
 
@@ -190,8 +207,32 @@ func testHTTPClient(regionHeader string) error {
 			return err
 		}
 		_ = resp.Body.Close()
-		log.Println(string(out))
+		log.Println(" " + string(out))
 	}
+
+	return nil
+}
+
+func testGraphQLClient(regionHeader string) error {
+	reqBody := strings.NewReader(`{"query":"{ hello }"}`)
+	req, err := http.NewRequest(http.MethodPost, polyRouteGraphQLServerAddr+"/graph", reqBody) //nolint:noctx // test file
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set(forwarder.HeaderRegionKey, regionHeader)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	out, err := io.ReadAll(resp.Body)
+	if err != nil {
+		_ = resp.Body.Close()
+		return err
+	}
+	_ = resp.Body.Close()
+	log.Print(" " + string(out))
 
 	return nil
 }

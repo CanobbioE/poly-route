@@ -46,8 +46,8 @@ publish:
 test:
 	- docker compose down
 	- docker rmi canobbioe/poly-route
-	- docker rmi canobbioe/example-servers
-	- docker rmi canobbioe/example-client
+	- docker rmi canobbioe/poly-route-example-servers
+	- docker rmi canobbioe/poly-route-example-client
 	docker compose build
 	docker compose up
 

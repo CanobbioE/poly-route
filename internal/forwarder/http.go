@@ -1,6 +1,7 @@
 package forwarder
 
 import (
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -68,17 +69,17 @@ func findBackend(cfg *config.ProtocolCfg, entrypoint, region string) (string, bo
 }
 
 func httpForward(target string, w http.ResponseWriter, r *http.Request) {
+	log.Printf("forwarding HTTP request towards addr=%s method=%s", target, r.Method)
 	u, err := url.Parse(target)
 	if err != nil {
 		http.Error(w, "bad backend url", http.StatusInternalServerError)
 		return
 	}
 	proxy := httputil.NewSingleHostReverseProxy(u)
-	origPath := r.URL.Path
 	proxy.Director = func(req *http.Request) {
 		req.URL.Scheme = u.Scheme
 		req.URL.Host = u.Host
-		req.URL.Path = origPath
+		req.URL.Path = u.Path
 		req.URL.RawQuery = r.URL.RawQuery
 		// TODO: consider adding X-Forwarded-For
 		req.Header = r.Header

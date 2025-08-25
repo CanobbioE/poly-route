@@ -38,8 +38,9 @@ func main() {
 
 	httpProxy := startHTTPProxy(cfg, regionResolver)
 	grpcProxy := startGRPCProxy(cfg, regionResolver)
+	graphQLProxy := startGraphQLProxy(cfg, regionResolver)
 
-	if httpProxy == nil && grpcProxy == nil {
+	if httpProxy == nil && grpcProxy == nil && graphQLProxy == nil {
 		log.Fatal("no proxy server set up, stopping now")
 	}
 
@@ -60,6 +61,31 @@ func main() {
 	if grpcProxy != nil {
 		grpcProxy.GracefulStop()
 	}
+	if graphQLProxy != nil {
+		err = graphQLProxy.Shutdown(ctx)
+		if err != nil {
+			log.Println("failed to shutdown proxy GraphQL server")
+		}
+	}
+}
+
+func startGraphQLProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver) *http.Server {
+	if cfg.GraphQL == nil {
+		log.Println("GraphQL proxy not enabled")
+		return nil
+	}
+
+	server := newHTTPProxyServer(cfg.GraphQL, resolver)
+
+	go func() {
+		log.Println("graphql proxy listening on", server.Addr)
+		if err := server.ListenAndServe(); err != nil {
+			log.Printf("failed to serve graphql over http: %v", err)
+			return
+		}
+	}()
+
+	return server
 }
 
 func startHTTPProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver) *http.Server {
@@ -67,21 +93,9 @@ func startHTTPProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver) *ht
 		log.Println("HTTP proxy not enabled")
 		return nil
 	}
-	mux := http.NewServeMux()
-	httpHandler := forwarder.HTTP(cfg.HTTP, resolver).Handler()
-	mux.HandleFunc("/", httpHandler)
-	addr := cfg.HTTP.Listen
-	if !strings.HasPrefix(cfg.HTTP.Listen, ":") {
-		addr = ":" + cfg.HTTP.Listen
-	}
-	server := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadTimeout:       5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		ReadHeaderTimeout: 2 * time.Second,
-	}
+
+	server := newHTTPProxyServer(cfg.HTTP, resolver)
+
 	go func() {
 		log.Println("http proxy listening on", server.Addr)
 		if err := server.ListenAndServe(); err != nil {
@@ -93,13 +107,33 @@ func startHTTPProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver) *ht
 	return server
 }
 
+func newHTTPProxyServer(cfg *config.ProtocolCfg, resolver routing.RegionResolver) *http.Server {
+	mux := http.NewServeMux()
+	httpHandler := forwarder.HTTP(cfg, resolver).Handler()
+	mux.HandleFunc("/", httpHandler)
+	addr := cfg.Listen
+	if !strings.HasPrefix(cfg.Listen, ":") {
+		addr = ":" + cfg.Listen
+	}
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: 2 * time.Second,
+	}
+
+	return server
+}
+
 func startGRPCProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver) *grpc.Server {
 	if cfg.GRPC == nil {
 		log.Println("gRPC proxy not enabled")
 		return nil
 	}
 
-	lis, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", cfg.GRPC.Listen)
+	lis, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", ":"+cfg.GRPC.Listen)
 	if err != nil {
 		log.Printf("failed to listen to %s: %v", cfg.GRPC.Listen, err)
 		return nil

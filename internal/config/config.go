@@ -34,6 +34,7 @@ type RegionResolver struct {
 type ServiceCfg struct {
 	HTTP            *ProtocolCfg     `yaml:"http"`
 	GRPC            *ProtocolCfg     `yaml:"grpc"`
+	GraphQL         *ProtocolCfg     `yaml:"graphql"`
 	RegionRetriever *RegionRetriever `yaml:"region_retriever"`
 }
 

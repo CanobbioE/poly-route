@@ -10,6 +10,7 @@ services:
     ports:
       - "9999:9999"
       - "8888:8888"
+      - "7777:7777"
     volumes:
       - ./example/docker-config.yaml:/app/config.yaml:ro
     environment:
@@ -26,6 +27,8 @@ services:
       - "1234:1234"
       - "8085:8085"
       - "8081:8081"
+      - "7070:7070"
+      - "7071:7071"
       - "9095:9095"
       - "9091:9091"
 
@@ -39,6 +42,7 @@ services:
     environment:
       - HTTP_HOST=http://poly-route:8888
       - GRPC_HOST=poly-route:9999
+      - GRAPHQL_HOST=http://poly-route:7777
     depends_on:
       - example-servers
       - poly-route

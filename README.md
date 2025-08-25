@@ -1,5 +1,5 @@
 # Poly-Route
-A pluggable protocol-agnostic<sup>*</sup> transparent reverse proxy
+A pluggable multi-protocol<sup>*</sup> transparent reverse proxy
 
 ![img.png](img.png)
 
@@ -61,55 +61,74 @@ This starts three services:
 ### From CLI locally
 
 #### Start the test servers
+In a terminal run:
+
 ```shell
 go run ./example/server
+# mock http backend eu listening on :8085
+# mock http backend us listening on :8081
+# mock gRPC server listening on :9095
+# mock gRPC server listening on :9091
+# mock graphql backend eu listening on :7070
 ```
 
 The following ports must be available:
 - `1234`
 - `8085`
 - `8081`
+- `7070`
+- `7071`
 - `9095`
 - `9091`
 
 #### Start the proxy with the test config
 ```shell
 CONFIG_FILE_PATH=./example/config.yaml go run .
+# http proxy listening on :8888
+# graphql proxy listening on :7777
+# gRPC proxy listening on [::]:9999
 ```
 
-Ports `9999` and `8888` must be available
+Ports `9999`, `8888` and `7777` must be available
 
 #### Start the test client
 ```shell
-go run ./example/client
+HTTP_HOST=http://localhost:8888 GRPC_HOST=localhost:9999 GRAPHQL_HOST=http://localhost:7777 go run ./example/client
 ```
 
 Example output:
 ```shell
-Received BiDirectionalStream: Stream response for res-123
-Received BiDirectionalStream: Stream response for res-456
-Received BiDirectionalStream: Stream response for res-789
-Received ClientStream: res-123;res-456;res-789;
-Received ServerStream: res-123 response #0
-Received ServerStream: res-123 response #1
-Received ServerStream: res-123 response #2
-Received ServerStream: res-123 response #3
-Received ServerStream: res-123 response #4
-Received BiDirectionalStream: Stream response for res-123
-Received BiDirectionalStream: Stream response for res-456
-Received BiDirectionalStream: Stream response for res-789
-Received ClientStream: res-123;res-456;res-789;
-Received ServerStream: res-123 response #0
-Received ServerStream: res-123 response #1
-Received ServerStream: res-123 response #2
-Received ServerStream: res-123 response #3
-Received ServerStream: res-123 response #4
-data:"Response for res-123"
-data:"Response for res-123"
-{"backend": eu, "addr": localhost:8085, "path": GET/}
-{"backend": eu, "addr": localhost:8085, "path": GET/}
-{"backend": us, "addr": localhost:8081, "path": GET/}
-{"backend": us, "addr": localhost:8081, "path": GET/}
+Testing GRPC...
+ Received BiDirectionalStream: Stream response for res-123
+ Received BiDirectionalStream: Stream response for res-456
+ Received BiDirectionalStream: Stream response for res-789
+ Received ClientStream: res-123;res-456;res-789;
+ Received ServerStream: res-123 response #0
+ Received ServerStream: res-123 response #1
+ Received ServerStream: res-123 response #2
+ Received ServerStream: res-123 response #3
+ Received ServerStream: res-123 response #4
+ Received BiDirectionalStream: Stream response for res-123
+ Received BiDirectionalStream: Stream response for res-456
+ Received BiDirectionalStream: Stream response for res-789
+ Received ClientStream: res-123;res-456;res-789;
+ Received ServerStream: res-123 response #0
+ Received ServerStream: res-123 response #1
+ Received ServerStream: res-123 response #2
+ Received ServerStream: res-123 response #3
+ Received ServerStream: res-123 response #4
+ data:"Response for res-123"
+ data:"Response for res-123"
+
+Testing HTTP...
+ {"backend": eu, "addr": :8085, "path": GET/}
+ {"backend": eu, "addr": :8085, "path": POST/}
+ {"backend": us, "addr": :8081, "path": GET/}
+ {"backend": us, "addr": :8081, "path": POST/}
+
+Testing GraphQL...
+ {"data":{"hello":"{\"backend\": eu, \"addr\": :7070, \"path\": \"graphql/hello\"}"}}
+ {"data":{"hello":"{\"backend\": us, \"addr\": :7071, \"path\": \"graphql/hello\"}"}}
 ```
 
 ## Next steps
@@ -145,13 +164,13 @@ Poly-Route is plug and play
 
 ## Roadmap
 - support nested keys in region resolver responses
-- support for GraphQL
 - logger configuration
-- support POST for region resolver
 - improve logs
 - improve error messages
 - support more protocols
-
+- TLS support
+- support POST for region resolver
+- support for direct-DB-access region resolver
 
 ## Configuration Guide
 
@@ -169,6 +188,22 @@ http:
 Proxy listens on port 8888. All HTTP requests to `/` are routed by region:
 - `euw1` -> `http://localhost:8085`
 - `use1` -> `http://localhost:8081`
+
+### GraphQL
+Although GraphQL runs over HTTP and could be configured using the [HTTP Configuration](#http) poly-route provides a dedicated `graphql` option as a convenient shorthand
+
+```yaml
+graphql:
+  listen: "7777"
+  destinations:
+    /graph:
+      euw1: "http://localhost:7070/graphql"
+      use1: "http://localhost:7071/graphql"
+```
+
+Proxy listens on port 7777. All GraphQL (over HTTP) requests to `/graph` are routed by region:
+- `euw1` -> `http://localhost:7070/graphql`
+- `use1` -> `http://localhost:7071/graphql`
 
 ### gRPC
 
@@ -204,6 +239,18 @@ Proxy queries `http://localhost:1234/userinfo?user_id=...`.
 The `country` field in the response is mapped to an internal region key.
 - `europe-west1` or `eu-west1` -> `euw1`
 - `us-east1` -> `use1`
+
+Optionally, the `region_retriever` type could be set to `"static"`.
+In this case, the `region_retriever` field `static` should also be present
+
+```yaml
+region_retriever:
+  type: "static"
+  static: "eu-west"
+```
+
+Static mode is useful when testing the proxy integration.
+It removes the extra noise caused by the region resolver.
 
 ### Flow
 
