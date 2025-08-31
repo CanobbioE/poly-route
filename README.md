@@ -171,6 +171,7 @@ Poly-Route is plug and play
 - TLS support
 - support POST for region resolver
 - support for direct-DB-access region resolver
+- wildcard destinations
 
 ## Configuration Guide
 
