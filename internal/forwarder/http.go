@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 
 	"github.com/CanobbioE/poly-route/internal/config"
 	"github.com/CanobbioE/poly-route/internal/routing"
@@ -60,9 +61,24 @@ func (x *HTTPForwarder) Handler() http.HandlerFunc {
 }
 
 func findBackend(cfg *config.ProtocolCfg, entrypoint, region string) (string, bool) {
+	if mapping, matchAll := cfg.Destinations["*"]; matchAll {
+		return mapping[region], true
+	}
+
 	mapping, ok := cfg.Destinations[entrypoint]
 	if !ok {
-		return "", false
+		// if not found by full entrypoint, try matching by wildcard
+		last := strings.LastIndex(entrypoint, "/")
+		if last == -1 {
+			return "", false
+		}
+
+		wildcard := entrypoint[:last+1] + "*"
+		mapping, ok = cfg.Destinations[wildcard]
+		if !ok {
+			return "", false
+		}
+		return mapping[region], true
 	}
 	v, ok := mapping[region]
 	return v, ok

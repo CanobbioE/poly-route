@@ -70,6 +70,7 @@ go run ./example/server
 # mock gRPC server listening on :9095
 # mock gRPC server listening on :9091
 # mock graphql backend eu listening on :7070
+# mock graphql backend us listening on :7071
 ```
 
 The following ports must be available:
@@ -171,7 +172,6 @@ Poly-Route is plug and play
 - TLS support
 - support POST for region resolver
 - support for direct-DB-access region resolver
-- wildcard destinations
 
 ## Configuration Guide
 
@@ -218,6 +218,30 @@ grpc:
 ```
 
 Proxy listens on port 9999. Each RPC method is routed to the correct backend by region.
+
+
+### Wildcards
+To simplify HTTP and gRPC method matching, poly-route supports wildcards (i.e. `*`).
+For example, instead of specifying all the methods under`/mockserver.v1.MockService` in the above gRPC example, it's possible simply specify `/mockserver.v1.MockService/*`.
+
+The same is true for HTTP!
+
+Furthermore, it's even possible to use a single asterisk between quotes (`"*"`) to match all incoming traffic on that protocol:
+```yaml
+grpc:
+  listen: "9999"
+  destinations:
+    /mockserver.v1.MockService/Invoke":
+      euw1: "localhost:9095"
+      use1: "localhost:9091"
+
+http:
+  listen: "8888"
+  destinations:
+    "*":
+      euw1: "http://localhost:8085"
+      use1: "http://localhost:8081"
+```
 
 ### Region Retriever
 
