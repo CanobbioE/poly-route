@@ -1,5 +1,5 @@
 # Poly-Route
-A pluggable multi-protocol<sup>*</sup> transparent reverse proxy
+A pluggable multi-protocol<sup>*</sup> transparent reverse proxy with multi-region support
 
 ![img.png](img.png)
 
