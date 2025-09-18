@@ -51,7 +51,7 @@ func (x *HTTPForwarder) Handler() http.HandlerFunc {
 			return
 		}
 
-		target, ok := findBackend(x.cfg, r.URL.Path, resolvedRegion)
+		target, ok := x.FindBackend(r.URL.Path, resolvedRegion)
 		if !ok {
 			http.Error(w, "no backend for this path/region", http.StatusBadGateway)
 			return
@@ -60,28 +60,46 @@ func (x *HTTPForwarder) Handler() http.HandlerFunc {
 	}
 }
 
-func findBackend(cfg *config.ProtocolCfg, entrypoint, region string) (string, bool) {
-	if mapping, matchAll := cfg.Destinations["*"]; matchAll {
-		return mapping[region], true
+// FindBackend finds an HTTP backend by best match using the HTTPForwarder protocol configuration.
+// The best route is either an exact match with the entrypoint or the longest wild-card-suffixed match.
+func (x *HTTPForwarder) FindBackend(entrypoint, region string) (string, bool) {
+	// exact match
+	mappings, exactMatch := x.cfg.Destinations[entrypoint]
+	if exactMatch {
+		v, ok := mappings[region]
+		return v, ok
 	}
 
-	mapping, ok := cfg.Destinations[entrypoint]
+	var bestMatch string
+	for key := range x.cfg.Destinations {
+		switch {
+		case key == "*":
+			// match-all wildcard
+			bestMatch = key
+			continue
+
+		case !strings.HasSuffix(key, "/*"):
+			// no wildcard, skip
+			continue
+		case strings.HasPrefix(entrypoint, key[:len(key)-1]) || strings.HasPrefix(entrypoint, key[:len(key)-2]):
+			// key has wildcard /*
+			// and what comes before * or /* is part of the entrypoint
+			if len(key) <= len(bestMatch) {
+				continue // a better match already exists
+			}
+			entrypoint = entrypoint[len(key)-1:]
+			bestMatch = key
+		}
+	}
+
+	mappings = x.cfg.Destinations[bestMatch]
+	v, ok := mappings[region]
 	if !ok {
-		// if not found by full entrypoint, try matching by wildcard
-		last := strings.LastIndex(entrypoint, "/")
-		if last == -1 {
-			return "", false
-		}
-
-		wildcard := entrypoint[:last+1] + "*"
-		mapping, ok = cfg.Destinations[wildcard]
-		if !ok {
-			return "", false
-		}
-		return mapping[region], true
+		return "", false
 	}
-	v, ok := mapping[region]
-	return v, ok
+
+	u, err := url.JoinPath(v, entrypoint)
+	return u, err == nil
 }
 
 func httpForward(target string, w http.ResponseWriter, r *http.Request) {

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"path/filepath"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -62,7 +64,7 @@ func (x *GRPCForwarder) Handler() grpc.StreamHandler {
 			return fmt.Errorf("cannot resolve region %s: %w", region, err)
 		}
 
-		backend, ok := findBackend(x.cfg, method, resolvedRegion)
+		backend, ok := x.FindBackend(method, resolvedRegion)
 		if !ok {
 			return fmt.Errorf("no backend for method %s region %s", method, region)
 		}
@@ -159,4 +161,33 @@ func forwardStream[S senderReceiver, D senderReceiver](src S, dst D) chan error 
 	}()
 
 	return errCh
+}
+
+// FindBackend finds a GRPC backend by best match using the GRPCForwarder protocol configuration.
+// The best route is eiter an exact match with the entrypoint or a wildcard-suffixed match.
+func (x *GRPCForwarder) FindBackend(entrypoint, region string) (string, bool) {
+	mapping, exactMatch := x.cfg.Destinations[entrypoint]
+	if exactMatch {
+		v, ok := mapping[region]
+		return v, ok
+	}
+
+	// if not found by full entrypoint, try matching by wildcard
+	last := strings.LastIndex(entrypoint, "/")
+	if last == -1 {
+		return "", false
+	}
+
+	wildcard := entrypoint[:last+1] + "*"
+	if m, match := x.cfg.Destinations[wildcard]; match {
+		destination, ok := m[region]
+		return filepath.Join(destination, entrypoint[len(wildcard)-2:]), ok
+	}
+
+	if m, matchAll := x.cfg.Destinations["*"]; matchAll {
+		destination, ok := m[region]
+		return filepath.Join(destination, entrypoint), ok
+	}
+
+	return "", false
 }

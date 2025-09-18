@@ -212,36 +212,67 @@ Proxy listens on port 7777. All GraphQL (over HTTP) requests to `/graph` are rou
 grpc:
   listen: "9999"
   destinations:
-    /mockserver.v1.MockService/Invoke":
+    "/mockserver.v1.MockService/Invoke":
       euw1: "localhost:9095"
       use1: "localhost:9091"
 ```
 
 Proxy listens on port 9999. Each RPC method is routed to the correct backend by region.
 
-
 ### Wildcards
-To simplify HTTP and gRPC method matching, poly-route supports wildcards (i.e. `*`).
-For example, instead of specifying all the methods under`/mockserver.v1.MockService` in the above gRPC example, it's possible simply specify `/mockserver.v1.MockService/*`.
+To simplify HTTP and gRPC method routing, poly-route supports wildcards (`*`).  
+This allows specifying broad patterns instead of enumerating each endpoint individually.
 
-The same is true for HTTP!
+#### HTTP Wildcards
+The router always prefers an exact match over a wildcard match.
+> Example: If the entrypoint is `/test/v1/config` and the configuration specifies both `/test/v1/*` and `/test/v1/config` destinations, `/test/v1/config` will be chosen.
 
-Furthermore, it's even possible to use a single asterisk between quotes (`"*"`) to match all incoming traffic on that protocol:
-```yaml
+- Only suffix wildcards (`.../*`) are supported for HTTP routes.
+- The longest matching prefix wins.
+- The part of the entrypoint that matches the wildcard is appended to the destination.
+
+> Example:  
+> Entrypoint: `/test/v1/config`  
+> Route: `/test/*` -> `http://localhost`  
+> Resulting request: `http://localhost/v1/config`
+
+> Exact match example:  
+> Route: `/test/v1/config` -> `http://localhost`  
+> Resulting request: `http://localhost`
+
+A single asterisk (`"*"`) matches all entrypoints.  
+It is used as a fallback if no more specific route is found.
+
+#### GRPC Wildcards
+Similarly to [HTTP wildcards](#http-wildcards) exact matches are preferred over wildcards,
+in case no exact match is found, the best one is returned.
+If no best match is found and a match-all wildcard (`"*"`) is present, then that route is chosen.
+
+#### Sample Configuration
+~~~yaml
 grpc:
   listen: "9999"
   destinations:
-    /mockserver.v1.MockService/Invoke":
+    "*":
+      euw1: "localhost"
+      use1: "localhost"
+    "/mockserver.v1.MockService/*":
       euw1: "localhost:9095"
       use1: "localhost:9091"
 
 http:
   listen: "8888"
   destinations:
+    "/test/v1/*":
+      euw1: "http://localhost:8085"
+      use1: "http://localhost:8081"
+    "/test/*":
+      euw1: "http://localhost:8085"
+      use1: "http://localhost:8081"
     "*":
       euw1: "http://localhost:8085"
       use1: "http://localhost:8081"
-```
+~~~
 
 ### Region Retriever
 
