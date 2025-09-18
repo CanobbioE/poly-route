@@ -22,6 +22,7 @@ Poly-Route provides a single global entrypoint for regional APIs. The region is 
 - [Configuration Guide](#configuration-guide)
     - [HTTP](#http)
     - [gRPC](#grpc)
+    - [Wildcards](#wildcards)
     - [Region Retriever](#region-retriever)
     - [Flow](#flow)
 
