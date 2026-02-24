@@ -5,6 +5,7 @@ import (
 
 	"github.com/CanobbioE/poly-route/internal/config"
 	"github.com/CanobbioE/poly-route/internal/forwarder"
+	"github.com/CanobbioE/poly-route/internal/logger"
 )
 
 func TestGRPCForwarder_FindBackend(t *testing.T) {
@@ -108,7 +109,7 @@ func TestGRPCForwarder_FindBackend(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			x := forwarder.GRPC(tt.args.cfg, nil)
+			x := forwarder.GRPC(tt.args.cfg, nil, &logger.NoOpLogger{})
 			got, got1 := x.FindBackend(tt.args.entrypoint, tt.args.region)
 			if got != tt.want {
 				t.Errorf("grpc.FindBackend() got = '%v', want '%v'", got, tt.want)

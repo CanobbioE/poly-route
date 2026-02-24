@@ -14,6 +14,7 @@ func StartMockHTTPBackend(addr, name string) *http.Server {
 	h := http.NewServeMux()
 	h.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
+		//nolint:gosec // mock file
 		_, _ = w.Write([]byte(`{"backend": ` + name + `, "addr": ` + addr + `, "path": ` + r.Method + r.URL.Path + `}`))
 	})
 	server := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 30 * time.Second}

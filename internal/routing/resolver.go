@@ -107,6 +107,11 @@ func (x *httpResolver) ResolveRegion(ctx context.Context, param string) (string,
 		if err != nil {
 			return "", fmt.Errorf("region resolver: failed to create GET request: %w", err)
 		}
+
+		// URL is loaded from a static configuration file.
+		// This prevents arbitrary SSRF as only pre-defined URLs are reachable.
+		//
+		//nolint:gosec // G704: URL is loaded from static configuration.
 		resp, err = x.client.Do(req)
 		if err != nil {
 			return "", fmt.Errorf("region resolver: failed to send GET request: %w", err)

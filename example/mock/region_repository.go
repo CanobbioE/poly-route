@@ -19,6 +19,7 @@ func StartMockRegionRepository(addr string) *http.Server {
 	h.HandleFunc("/userinfo", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		qp := r.URL.Query().Get("user_id")
+		//nolint:gosec // mock file
 		_, _ = fmt.Fprintf(w, "%s", `{"country": "`+qp+`"}`)
 	})
 

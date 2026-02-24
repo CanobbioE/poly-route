@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -17,23 +17,35 @@ import (
 
 	"github.com/CanobbioE/poly-route/internal/codec"
 	"github.com/CanobbioE/poly-route/internal/config"
+	"github.com/CanobbioE/poly-route/internal/logger"
 	"github.com/CanobbioE/poly-route/internal/routing"
 )
 
 // MetadataRegionKey is the metadata key used to retrieve the region from the api call.
 const MetadataRegionKey = "poly-route-region"
 
+// framePool is used by forwardStream to reuse slice of bytes to ease GC stress.
+var framePool = sync.Pool{
+	New: func() any {
+		// initialize a pointer to a slice to avoid extra allocations
+		b := make([]byte, 0, 32*1024) // 32KB
+		return &b
+	},
+}
+
 // GRPCForwarder implements a reverse transparent proxy for GRPC.
 type GRPCForwarder struct {
 	cfg            *config.ProtocolCfg
 	regionResolver routing.RegionResolver
+	log            logger.LazyLogger
 }
 
 // GRPC creates a new GRPCForwarder.
-func GRPC(cfg *config.ProtocolCfg, resolver routing.RegionResolver) *GRPCForwarder {
+func GRPC(cfg *config.ProtocolCfg, resolver routing.RegionResolver, l logger.LazyLogger) *GRPCForwarder {
 	return &GRPCForwarder{
 		cfg:            cfg,
 		regionResolver: resolver,
+		log:            l,
 	}
 }
 
@@ -77,14 +89,16 @@ func (x *GRPCForwarder) Handler() grpc.StreamHandler {
 	}
 }
 
-func (*GRPCForwarder) forwardGRPCStream(
+func (x *GRPCForwarder) forwardGRPCStream(
 	ctx context.Context,
 	backendAddr, method string,
 	serverStream grpc.ServerStream,
 ) error {
-	log.Printf("forwarding GRPC request towards addr=%s method=%s", backendAddr, method)
+	lazyLog := x.log.WithLazy("method", method, "address", backendAddr)
+	lazyLog.Info("forwarding grpc stream")
 
 	conn, err := grpc.NewClient(backendAddr,
+		// using insecure: assuming mTLS is handled at the service mesh/infrastructure layer
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(grpc.ForceCodec(&codec.PassThrough{})))
 	if err != nil {
@@ -93,7 +107,7 @@ func (*GRPCForwarder) forwardGRPCStream(
 	defer func() {
 		err = conn.Close()
 		if err != nil {
-			log.Printf("failed to close backend %s: %v", backendAddr, err)
+			lazyLog.Warn("failed to close backend connection")
 		}
 	}()
 
@@ -111,8 +125,8 @@ func (*GRPCForwarder) forwardGRPCStream(
 	}
 
 	// Bidirectional copy
-	cli2SrvErrCh := forwardStream(clientStream, serverStream)
-	srv2CliErrCh := forwardStream(serverStream, clientStream)
+	cli2SrvErrCh := forwardStream(ctx, clientStream, serverStream)
+	srv2CliErrCh := forwardStream(ctx, serverStream, clientStream)
 
 	// listen for errors: io.EOF from either chan is good
 	// anything else is an issue
@@ -134,8 +148,9 @@ func (*GRPCForwarder) forwardGRPCStream(
 			return nil
 		}
 	}
-	// TODO: error message
-	return status.Errorf(codes.Internal, "gRPC proxying should never reach this stage.")
+	// this is an invalid state that should never occur, return nil but print a bug log line for observability
+	lazyLog.Error("gRPC proxying reached an invalid state", "bug", true)
+	return nil
 }
 
 type senderReceiver interface {
@@ -143,23 +158,34 @@ type senderReceiver interface {
 	RecvMsg(m any) error
 }
 
-func forwardStream[S senderReceiver, D senderReceiver](src S, dst D) chan error {
+func forwardStream[S senderReceiver, D senderReceiver](ctx context.Context, src S, dst D) chan error {
 	errCh := make(chan error, 1)
 	go func() {
-		// client → backend
 		for {
-			var raw []byte
-			if err := src.RecvMsg(&raw); err != nil {
-				errCh <- err
+			select {
+			case <-ctx.Done():
+				errCh <- ctx.Err()
 				return
-			}
-			if err := dst.SendMsg(&raw); err != nil {
-				errCh <- err
-				return
+			default:
+				// get a buffer from the pool
+				// and put it back before exiting
+				bufPtr := framePool.Get().(*[]byte)
+				raw := (*bufPtr)[:0]
+
+				if err := src.RecvMsg(&raw); err != nil {
+					framePool.Put(bufPtr)
+					errCh <- err
+					return
+				}
+				if err := dst.SendMsg(&raw); err != nil {
+					framePool.Put(bufPtr)
+					errCh <- err
+					return
+				}
+				framePool.Put(bufPtr)
 			}
 		}
 	}()
-
 	return errCh
 }
 

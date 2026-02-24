@@ -166,8 +166,9 @@ Poly-Route is plug and play
 
 ## Roadmap
 - support nested keys in region resolver responses
+- add more unit tests
+- performance improvements (i.e. findBackend lookups)
 - logger configuration
-- improve logs
 - improve error messages
 - support more protocols
 - TLS support

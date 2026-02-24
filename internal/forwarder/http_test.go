@@ -5,6 +5,7 @@ import (
 
 	"github.com/CanobbioE/poly-route/internal/config"
 	"github.com/CanobbioE/poly-route/internal/forwarder"
+	"github.com/CanobbioE/poly-route/internal/logger"
 )
 
 func TestHTTPForwarder_FindBackend(t *testing.T) {
@@ -123,7 +124,7 @@ func TestHTTPForwarder_FindBackend(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ht := forwarder.HTTP(tt.args.cfg, nil)
+			ht := forwarder.HTTP(tt.args.cfg, nil, &logger.NoOpLogger{})
 			got, got1 := ht.FindBackend(tt.args.entrypoint, tt.args.region)
 			if got != tt.want {
 				t.Errorf("http.FindBackend() got = '%v', want '%v'", got, tt.want)
