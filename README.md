@@ -168,12 +168,16 @@ Poly-Route is plug and play
 - support nested keys in region resolver responses
 - add more unit tests
 - performance improvements (i.e. findBackend lookups with radix tree)
-- logger configuration
-- improve error messages
+- logger configuration (let user decide how/where to log)
+- improve error messages (hide internal details but still provide meaningful info)
 - support more protocols
 - TLS support
 - support POST for region resolver
-- support for direct-DB-access region resolver
+- support direct-DB-access for region resolver
+- expose metrics
+- add spans and tracing
+- add region fallback on unhealthy backend
+- consider rate limiting solutions
 
 ## Configuration Guide
 
