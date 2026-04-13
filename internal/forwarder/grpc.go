@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
+	"path"
 	"strings"
 	"sync"
 
@@ -38,6 +38,7 @@ type GRPCForwarder struct {
 	cfg            *config.ProtocolCfg
 	regionResolver routing.RegionResolver
 	log            logger.LazyLogger
+	routes         []*routing.CompiledRoute
 }
 
 // GRPC creates a new GRPCForwarder.
@@ -46,6 +47,7 @@ func GRPC(cfg *config.ProtocolCfg, resolver routing.RegionResolver, l logger.Laz
 		cfg:            cfg,
 		regionResolver: resolver,
 		log:            l,
+		routes:         routing.CompileRoutes(cfg, config.ProtocolGRPC),
 	}
 }
 
@@ -97,6 +99,8 @@ func (x *GRPCForwarder) forwardGRPCStream(
 	lazyLog := x.log.WithLazy("method", method, "address", backendAddr)
 	lazyLog.Info("forwarding grpc stream")
 
+	// TODO: creating a new gRPC connection for every proxied request is expensive.
+	// 	use a connection pool
 	conn, err := grpc.NewClient(backendAddr,
 		// using insecure: assuming mTLS is handled at the service mesh/infrastructure layer
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -192,28 +196,42 @@ func forwardStream[S senderReceiver, D senderReceiver](ctx context.Context, src 
 // FindBackend finds a GRPC backend by best match using the GRPCForwarder protocol configuration.
 // The best route is eiter an exact match with the entrypoint or a wildcard-suffixed match.
 func (x *GRPCForwarder) FindBackend(entrypoint, region string) (string, bool) {
-	mapping, exactMatch := x.cfg.Destinations[entrypoint]
-	if exactMatch {
-		v, ok := mapping[region]
-		return v, ok
-	}
+	for _, r := range x.routes {
+		switch r.Kind {
+		case routing.RouteExact:
+			if r.Prefix != entrypoint {
+				continue
+			}
+		case routing.RoutePrefix:
+			// r.prefix is e.g. "/pkg.Service/" — entrypoint must start with it
+			// and the last segment must sit right after it (no further slashes).
+			if !strings.HasPrefix(entrypoint, r.Prefix) {
+				continue
+			}
+			rest := entrypoint[len(r.Prefix):]
+			if strings.Contains(rest, "/") {
+				continue // only single-segment wildcard in gRPC
+			}
+		case routing.RouteMatchAll:
+			// always matches
+		}
 
-	// if not found by full entrypoint, try matching by wildcard
-	last := strings.LastIndex(entrypoint, "/")
-	if last == -1 {
-		return "", false
-	}
+		dest, ok := r.Mappings[region]
+		if !ok {
+			return "", false
+		}
 
-	wildcard := entrypoint[:last+1] + "*"
-	if m, match := x.cfg.Destinations[wildcard]; match {
-		destination, ok := m[region]
-		return filepath.Join(destination, entrypoint[len(wildcard)-2:]), ok
+		if r.Kind == routing.RouteExact {
+			return dest, true
+		}
+		// Both RoutePrefix and RouteMatchAll append the suffix.
+		var suffix string
+		if r.Kind == routing.RoutePrefix {
+			suffix = entrypoint[len(r.Prefix)-1:] // include the leading "/"
+		} else {
+			suffix = entrypoint
+		}
+		return path.Join(dest, suffix), true
 	}
-
-	if m, matchAll := x.cfg.Destinations["*"]; matchAll {
-		destination, ok := m[region]
-		return filepath.Join(destination, entrypoint), ok
-	}
-
 	return "", false
 }

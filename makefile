@@ -1,7 +1,14 @@
-PHONY:
 GO111MODULE=on
 
 default:
+	@echo "Removing old Docker images..."
+	-@docker rmi canobbioe/poly-route
+	-@docker rmi canobbioe/poly-route-example-server
+	-@docker rmi canobbioe/poly-route-example-client
+	@echo "Building new Docker images..."
+	@docker build -t canobbioe/poly-route .
+	@docker build -t canobbioe/poly-route-example-server -f ./example/server/Dockerfile .
+	@docker build -t canobbioe/poly-route-example-client -f ./example/client/Dockerfile .
 
 fmt:
 	@gofmt -s -w $$(go list -f "{{.Dir}}" ./...)
@@ -43,12 +50,7 @@ publish:
 	docker build -t canobbioe/poly-route:latest -f Dockerfile .
 	docker push canobbioe/poly-route
 
-test:
-	- docker compose down
-	- docker rmi canobbioe/poly-route
-	- docker rmi canobbioe/poly-route-example-servers
-	- docker rmi canobbioe/poly-route-example-client
-	docker compose build
+test: default
 	docker compose up
 
 

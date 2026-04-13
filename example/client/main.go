@@ -196,7 +196,7 @@ func testHTTPClient(regionHeader string) error {
 
 	for _, req := range []*http.Request{getReq, postReq} {
 		req.Header.Set(forwarder.HeaderRegionKey, regionHeader)
-		resp, err := http.DefaultClient.Do(req) //nolint:gosec // test file
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return err
 		}
@@ -221,7 +221,7 @@ func testGraphQLClient(regionHeader string) error {
 	}
 
 	req.Header.Set(forwarder.HeaderRegionKey, regionHeader)
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // test file
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}

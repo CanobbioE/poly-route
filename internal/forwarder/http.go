@@ -31,6 +31,7 @@ type HTTPForwarder struct {
 	regionResolver routing.RegionResolver
 	log            logger.LazyLogger
 	proxy          *httputil.ReverseProxy
+	routes         []*routing.CompiledRoute
 }
 
 // HTTP creates a new HTTPForwarder.
@@ -39,6 +40,7 @@ func HTTP(cfg *config.ProtocolCfg, resolver routing.RegionResolver, l logger.Laz
 		cfg:            cfg,
 		regionResolver: resolver,
 		log:            l,
+		routes:         routing.CompileRoutes(cfg, config.ProtocolHTTP),
 	}
 
 	fwd.proxy = &httputil.ReverseProxy{
@@ -106,53 +108,42 @@ func (x *HTTPForwarder) Handler() http.HandlerFunc {
 		ctx := context.WithValue(r.Context(), targetKey, targetURL)
 		// targetURL is resolved from a static configuration allow-list in x.cfg.Destinations.
 		// This prevents arbitrary SSRF as only pre-defined backends are reachable.
-		//
-		//nolint:gosec // G704: Target URL is validated against internal routing config.
 		x.proxy.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
 
 // FindBackend finds an HTTP backend by best match using the HTTPForwarder protocol configuration.
 // The best route is either an exact match with the entrypoint or the longest wild-card-suffixed match.
-//
-// TODO: for a larger scale, use a Radix Tree for O(L) matching (where L is the path length).
-// TODO: consider pre-computing paths at startup.
 func (x *HTTPForwarder) FindBackend(entrypoint, region string) (string, bool) {
-	// exact match
-	mappings, exactMatch := x.cfg.Destinations[entrypoint]
-	if exactMatch {
-		v, ok := mappings[region]
-		return v, ok
-	}
-
-	var bestMatch string
-	for key := range x.cfg.Destinations {
-		switch {
-		case key == "*":
-			// match-all wildcard
-			bestMatch = key
-			continue
-
-		case !strings.HasSuffix(key, "/*"):
-			// no wildcard, skip
-			continue
-		case strings.HasPrefix(entrypoint, key[:len(key)-1]) || strings.HasPrefix(entrypoint, key[:len(key)-2]):
-			// key has wildcard /*
-			// and what comes before * or /* is part of the entrypoint
-			if len(key) <= len(bestMatch) {
-				continue // a better match already exists
+	for _, r := range x.routes {
+		switch r.Kind {
+		case routing.RouteExact:
+			if r.Prefix != entrypoint {
+				continue
 			}
-			entrypoint = entrypoint[len(key)-1:]
-			bestMatch = key
+		case routing.RoutePrefix:
+			if !strings.HasPrefix(entrypoint, r.Prefix+"/") {
+				continue
+			}
+		case routing.RouteMatchAll:
+			// always matches
 		}
-	}
 
-	mappings = x.cfg.Destinations[bestMatch]
-	v, ok := mappings[region]
-	if !ok {
-		return "", false
-	}
+		dest, ok := r.Mappings[region]
+		if !ok {
+			return "", false
+		}
 
-	u, err := url.JoinPath(v, entrypoint)
-	return u, err == nil
+		if r.Kind == routing.RouteExact {
+			return dest, true
+		}
+
+		suffix := entrypoint[len(r.Prefix):]
+		if r.Kind == routing.RouteMatchAll {
+			suffix = entrypoint
+		}
+		u, err := url.JoinPath(dest, suffix)
+		return u, err == nil
+	}
+	return "", false
 }

@@ -3,7 +3,6 @@ package routing
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -52,31 +51,24 @@ func WithHTTPClient(client *http.Client) ResolverOption {
 // NewResolver instantiates a new implementation of RegionResolver based on the value of [config.RegionRetriever.Type].
 func NewResolver(cfg *config.RegionRetriever, opts ...ResolverOption) (RegionResolver, error) {
 	switch cfg.Type {
-	case "http":
-		return newHTTPResolver(cfg, opts...)
-	case "static":
-		return newStaticResolver(cfg)
+	case config.RegionResolverTypeHTTP:
+		return newHTTPResolver(cfg, opts...), nil
+	case config.RegionResolverTypeHStatic:
+		return newStaticResolver(cfg), nil
 	default:
 		return nil, fmt.Errorf("unknown resolver type: %s", cfg.Type)
 	}
 }
 
-func newStaticResolver(cfg *config.RegionRetriever) (RegionResolver, error) {
-	if cfg.Static == "" {
-		return nil, errors.New("when using static resolver, static value must be defined")
-	}
-	return &staticResolver{staticVal: cfg.Static}, nil
+func newStaticResolver(cfg *config.RegionRetriever) RegionResolver {
+	return &staticResolver{staticVal: cfg.Static}
 }
 
 func (x *staticResolver) ResolveRegion(_ context.Context, _ string) (string, error) {
 	return x.staticVal, nil
 }
 
-func newHTTPResolver(cfg *config.RegionRetriever, options ...ResolverOption) (RegionResolver, error) {
-	if cfg.Type != "http" {
-		return nil, fmt.Errorf("unsupported data retriever: %s", cfg.Type)
-	}
-
+func newHTTPResolver(cfg *config.RegionRetriever, options ...ResolverOption) RegionResolver {
 	r := &httpResolver{
 		retrieverCfg: cfg,
 		resolverCfg:  cfg.RegionResolver,
@@ -87,7 +79,7 @@ func newHTTPResolver(cfg *config.RegionRetriever, options ...ResolverOption) (Re
 		option.apply(r)
 	}
 
-	return r, nil
+	return r
 }
 
 func (x *httpResolver) ResolveRegion(ctx context.Context, param string) (string, error) {
@@ -110,8 +102,6 @@ func (x *httpResolver) ResolveRegion(ctx context.Context, param string) (string,
 
 		// URL is loaded from a static configuration file.
 		// This prevents arbitrary SSRF as only pre-defined URLs are reachable.
-		//
-		//nolint:gosec // G704: URL is loaded from static configuration.
 		resp, err = x.client.Do(req)
 		if err != nil {
 			return "", fmt.Errorf("region resolver: failed to send GET request: %w", err)
