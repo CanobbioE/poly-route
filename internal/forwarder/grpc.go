@@ -24,31 +24,45 @@ import (
 // MetadataRegionKey is the metadata key used to retrieve the region from the api call.
 const MetadataRegionKey = "poly-route-region"
 
-// framePool is used by forwardStream to reuse slice of bytes to ease GC stress.
+// framePool is used by forwardStream to reuse slices of bytes to ease GC stress.
 var framePool = sync.Pool{
 	New: func() any {
-		// initialize a pointer to a slice to avoid extra allocations
-		b := make([]byte, 0, 32*1024) // 32KB
+		b := make([]byte, 0, 32*1024) // 32 KB
 		return &b
 	},
 }
 
-// GRPCForwarder implements a reverse transparent proxy for GRPC.
+// GRPCForwarder implements a reverse transparent proxy for gRPC.
 type GRPCForwarder struct {
 	cfg            *config.ProtocolCfg
 	regionResolver routing.RegionResolver
 	log            logger.LazyLogger
+	pool           *ConnectionPool
 	routes         []*routing.CompiledRoute
 }
 
-// GRPC creates a new GRPCForwarder.
+// GRPC creates a new GRPCForwarder with an internal connection pool.
+// Connections are dialed lazily and reused across requests.
 func GRPC(cfg *config.ProtocolCfg, resolver routing.RegionResolver, l logger.LazyLogger) *GRPCForwarder {
+	pool := NewConnectionPool(
+		// Using insecure credentials: mTLS is assumed to be handled at the service-mesh/infrastructure layer.
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.ForceCodec(&codec.PassThrough{})),
+	)
+
 	return &GRPCForwarder{
 		cfg:            cfg,
 		regionResolver: resolver,
 		log:            l,
+		pool:           pool,
 		routes:         routing.CompileRoutes(cfg, config.ProtocolGRPC),
 	}
+}
+
+// Close drains the connection pool. It should be called once during graceful shutdown,
+// after the gRPC server has stopped accepting new requests.
+func (x *GRPCForwarder) Close() error {
+	return x.pool.CloseAll()
 }
 
 // Handler returns a [grpc.StreamHandler] transparent reverse proxy.
@@ -83,8 +97,7 @@ func (x *GRPCForwarder) Handler() grpc.StreamHandler {
 			return fmt.Errorf("no backend for method %s region %s", method, region)
 		}
 
-		err = x.forwardGRPCStream(outgoingCtx, backend, method, stream)
-		if err != nil {
+		if err = x.forwardGRPCStream(outgoingCtx, backend, method, stream); err != nil {
 			return fmt.Errorf("forward grpc stream: %w", err)
 		}
 		return nil
@@ -99,21 +112,13 @@ func (x *GRPCForwarder) forwardGRPCStream(
 	lazyLog := x.log.WithLazy("method", method, "address", backendAddr)
 	lazyLog.Info("forwarding grpc stream")
 
-	// TODO: creating a new gRPC connection for every proxied request is expensive.
-	// 	use a connection pool
-	conn, err := grpc.NewClient(backendAddr,
-		// using insecure: assuming mTLS is handled at the service mesh/infrastructure layer
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.ForceCodec(&codec.PassThrough{})))
+	// Fetch a cached connection from the pool instead of dialling on every request.
+	// The pool dials lazily and only replaces a connection when it has been shut down.
+	conn, err := x.pool.Get(backendAddr)
 	if err != nil {
-		return fmt.Errorf("dial backend %s: %w", backendAddr, err)
+		return fmt.Errorf("get backend connection %s: %w", backendAddr, err)
 	}
-	defer func() {
-		err = conn.Close()
-		if err != nil {
-			lazyLog.Warn("failed to close backend connection")
-		}
-	}()
+	// Note: we do NOT close conn here. Ownership stays with the pool.
 
 	desc := &grpc.StreamDesc{
 		ServerStreams: true,
@@ -128,12 +133,10 @@ func (x *GRPCForwarder) forwardGRPCStream(
 		return fmt.Errorf("create backend stream: %w", err)
 	}
 
-	// Bidirectional copy
+	// Bidirectional copy.
 	cli2SrvErrCh := forwardStream(ctx, clientStream, serverStream)
 	srv2CliErrCh := forwardStream(ctx, serverStream, clientStream)
 
-	// listen for errors: io.EOF from either chan is good
-	// anything else is an issue
 	for range 2 {
 		select {
 		case s2cErr := <-srv2CliErrCh:
@@ -152,7 +155,8 @@ func (x *GRPCForwarder) forwardGRPCStream(
 			return nil
 		}
 	}
-	// this is an invalid state that should never occur, return nil but print a bug log line for observability
+
+	// Should never be reached; log as a bug for observability.
 	lazyLog.Error("gRPC proxying reached an invalid state", "bug", true)
 	return nil
 }
@@ -171,7 +175,7 @@ func forwardStream[S senderReceiver, D senderReceiver](ctx context.Context, src 
 				errCh <- ctx.Err()
 				return
 			default:
-				// get a buffer from the pool
+				// Get a buffer from the pool
 				// and put it back before exiting
 				bufPtr := framePool.Get().(*[]byte)
 				raw := (*bufPtr)[:0]

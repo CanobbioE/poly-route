@@ -31,20 +31,30 @@ func main() {
 	}
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		log.Fatal("could not read config file", "path", cfgPath, "error", err)
+		log.Error("could not read config file", "path", cfgPath, "error", err)
+		return
 	}
 
 	regionResolver, err := routing.NewResolver(cfg.RegionRetriever)
 	if err != nil {
-		log.Fatal("failed to create region resolver", "error", err)
+		log.Error("failed to create region resolver", "error", err)
+		return
 	}
 
 	httpProxy := startHTTPProxy(cfg, regionResolver, log)
-	grpcProxy := startGRPCProxy(cfg, regionResolver, log)
+	grpcProxy, grpcForwarder := startGRPCProxy(cfg, regionResolver, log)
+	defer func() {
+		if grpcForwarder != nil {
+			// closing the forwarder as last thing ensures no connection
+			// from the pool is used after it has been closed
+			_ = grpcForwarder.Close()
+		}
+	}()
 	graphQLProxy := startGraphQLProxy(cfg, regionResolver, log)
 
 	if httpProxy == nil && grpcProxy == nil && graphQLProxy == nil {
-		log.Fatal("no proxy server set up, stopping now")
+		log.Error("no proxy server set up, stopping now")
+		return
 	}
 
 	sigCh := make(chan os.Signal, 1)
@@ -56,8 +66,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if httpProxy != nil {
-		err = httpProxy.Shutdown(ctx)
-		if err != nil {
+		if err = httpProxy.Shutdown(ctx); err != nil {
 			log.Warn("failed to shutdown proxy HTTP server")
 		}
 	}
@@ -65,8 +74,7 @@ func main() {
 		grpcProxy.GracefulStop()
 	}
 	if graphQLProxy != nil {
-		err = graphQLProxy.Shutdown(ctx)
-		if err != nil {
+		if err = graphQLProxy.Shutdown(ctx); err != nil {
 			log.Warn("failed to shutdown proxy GraphQL server")
 		}
 	}
@@ -130,20 +138,30 @@ func newHTTPProxyServer(cfg *config.ProtocolCfg, resolver routing.RegionResolver
 	return server
 }
 
-func startGRPCProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver, l logger.LazyLogger) *grpc.Server {
+// startGRPCProxy returns both the gRPC server and the forwarder so that the
+// caller can close the connection pool during shutdown.
+func startGRPCProxy(
+	cfg *config.ServiceCfg,
+	resolver routing.RegionResolver,
+	l logger.LazyLogger,
+) (*grpc.Server, *forwarder.GRPCForwarder) {
 	if cfg.GRPC == nil {
 		l.Info("gRPC proxy not enabled")
-		return nil
+		return nil, nil
 	}
 
 	lis, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", ":"+cfg.GRPC.Listen)
 	if err != nil {
 		l.Error("failed to listen", "address", cfg.GRPC.Listen, "error", err)
-		return nil
+		return nil, nil
 	}
 
-	grpcHandler := forwarder.GRPC(cfg.GRPC, resolver, l).Handler()
-	server := grpc.NewServer(grpc.UnknownServiceHandler(grpcHandler), grpc.ForceServerCodec(&codec.PassThrough{}))
+	grpcFwd := forwarder.GRPC(cfg.GRPC, resolver, l)
+	server := grpc.NewServer(
+		grpc.UnknownServiceHandler(grpcFwd.Handler()),
+		grpc.ForceServerCodec(&codec.PassThrough{}),
+	)
+
 	go func() {
 		l.Info("gRPC proxy is listening", "address", lis.Addr().String())
 		if err := server.Serve(lis); err != nil {
@@ -152,5 +170,5 @@ func startGRPCProxy(cfg *config.ServiceCfg, resolver routing.RegionResolver, l l
 		}
 	}()
 
-	return server
+	return server, grpcFwd
 }
