@@ -3,7 +3,6 @@ package forwarder
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"path"
 	"strings"
@@ -70,7 +69,8 @@ func (x *GRPCForwarder) Handler() grpc.StreamHandler {
 	return func(_ any, stream grpc.ServerStream) error {
 		method, ok := grpc.MethodFromServerStream(stream)
 		if !ok {
-			return errors.New("cannot get method from stream")
+			x.log.Error("cannot get method from stream")
+			return status.Errorf(codes.InvalidArgument, "invalid grpc method")
 		}
 
 		// copy context
@@ -84,21 +84,29 @@ func (x *GRPCForwarder) Handler() grpc.StreamHandler {
 			region = vals[0]
 		}
 		if region == "" {
-			return fmt.Errorf("no region found in metadata, set %s", MetadataRegionKey)
+			x.log.Error("missing region metadata", "key", MetadataRegionKey)
+			return status.Errorf(codes.InvalidArgument, "missing region metadata")
 		}
 
 		resolvedRegion, err := x.regionResolver.ResolveRegion(outgoingCtx, region)
 		if err != nil {
-			return fmt.Errorf("cannot resolve region %s: %w", region, err)
+			x.log.Error("failed to resolve region", "region", region, "error", err)
+			return status.Errorf(codes.InvalidArgument, "failed to resolve region")
 		}
 
 		backend, ok := x.FindBackend(method, resolvedRegion)
 		if !ok {
-			return fmt.Errorf("no backend for method %s region %s", method, region)
+			x.log.Error("no backend found for method/region", "method", method, "region", resolvedRegion)
+			return status.Errorf(codes.Unavailable, "no backend for method")
 		}
 
 		if err = x.forwardGRPCStream(outgoingCtx, backend, method, stream); err != nil {
-			return fmt.Errorf("forward grpc stream: %w", err)
+			// forwardGRPCStream returns gRPC status errors when appropriate.
+			x.log.Error("failed forwarding grpc stream", "method", method, "address", backend, "error", err)
+			if s, ok := status.FromError(err); ok {
+				return s.Err()
+			}
+			return status.Errorf(codes.Internal, "internal proxy error")
 		}
 		return nil
 	}
@@ -112,13 +120,12 @@ func (x *GRPCForwarder) forwardGRPCStream(
 	lazyLog := x.log.WithLazy("method", method, "address", backendAddr)
 	lazyLog.Info("forwarding grpc stream")
 
-	// Fetch a cached connection from the pool instead of dialling on every request.
-	// The pool dials lazily and only replaces a connection when it has been shut down.
-	conn, err := x.pool.Get(backendAddr)
+	// fetch a cached (or new) connection from the pool, the pool handles closing the connection
+	conn, err := x.pool.Get(ctx, backendAddr)
 	if err != nil {
-		return fmt.Errorf("get backend connection %s: %w", backendAddr, err)
+		x.log.Error("failed getting backend connection", "address", backendAddr, "error", err)
+		return status.Errorf(codes.Unavailable, "failed to connect to backend")
 	}
-	// Note: we do NOT close conn here. Ownership stays with the pool.
 
 	desc := &grpc.StreamDesc{
 		ServerStreams: true,
@@ -130,10 +137,11 @@ func (x *GRPCForwarder) forwardGRPCStream(
 
 	clientStream, err := conn.NewStream(clientCtx, desc, method)
 	if err != nil {
-		return fmt.Errorf("create backend stream: %w", err)
+		x.log.Error("failed creating backend stream", "method", method, "address", backendAddr, "error", err)
+		return status.Errorf(codes.Internal, "failed to create backend stream")
 	}
 
-	// Bidirectional copy.
+	// bidirectional copy
 	cli2SrvErrCh := forwardStream(ctx, clientStream, serverStream)
 	srv2CliErrCh := forwardStream(ctx, serverStream, clientStream)
 
@@ -156,7 +164,7 @@ func (x *GRPCForwarder) forwardGRPCStream(
 		}
 	}
 
-	// Should never be reached; log as a bug for observability.
+	// should never be reached, log as a bug for observability.
 	lazyLog.Error("gRPC proxying reached an invalid state", "bug", true)
 	return nil
 }
@@ -175,8 +183,7 @@ func forwardStream[S senderReceiver, D senderReceiver](ctx context.Context, src 
 				errCh <- ctx.Err()
 				return
 			default:
-				// Get a buffer from the pool
-				// and put it back before exiting
+				// get a buffer from the pool and put it back before exiting
 				bufPtr := framePool.Get().(*[]byte)
 				raw := (*bufPtr)[:0]
 
@@ -198,7 +205,7 @@ func forwardStream[S senderReceiver, D senderReceiver](ctx context.Context, src 
 }
 
 // FindBackend finds a GRPC backend by best match using the GRPCForwarder protocol configuration.
-// The best route is eiter an exact match with the entrypoint or a wildcard-suffixed match.
+// The best route is either an exact match with the entrypoint or a wildcard-suffixed match.
 func (x *GRPCForwarder) FindBackend(entrypoint, region string) (string, bool) {
 	for _, r := range x.routes {
 		switch r.Kind {
@@ -207,14 +214,22 @@ func (x *GRPCForwarder) FindBackend(entrypoint, region string) (string, bool) {
 				continue
 			}
 		case routing.RoutePrefix:
-			// r.prefix is e.g. "/pkg.Service/" — entrypoint must start with it
-			// and the last segment must sit right after it (no further slashes).
-			if !strings.HasPrefix(entrypoint, r.Prefix) {
+			// accept either exact equality or prefix + '/'
+			matchesPrefix := strings.HasPrefix(entrypoint, r.Prefix)
+			matchesPrefixOnceTrailingSlashIsRemoved := strings.HasSuffix(entrypoint, "/") &&
+				entrypoint == r.Prefix[:len(r.Prefix)-1]
+			if !matchesPrefix && !matchesPrefixOnceTrailingSlashIsRemoved {
 				continue
 			}
-			rest := entrypoint[len(r.Prefix):]
-			if strings.Contains(rest, "/") {
-				continue // only single-segment wildcard in gRPC
+			// ensure there is at most one '/' after prefix
+			// compute rest after the logical prefix (strip trailing slash if present)
+			pref := r.Prefix
+			if strings.HasSuffix(pref, "/") {
+				pref = pref[:len(pref)-1]
+			}
+			rest := entrypoint[len(pref):]
+			if strings.Count(rest, "/") > 1 {
+				continue
 			}
 		case routing.RouteMatchAll:
 			// always matches
@@ -228,13 +243,22 @@ func (x *GRPCForwarder) FindBackend(entrypoint, region string) (string, bool) {
 		if r.Kind == routing.RouteExact {
 			return dest, true
 		}
-		// Both RoutePrefix and RouteMatchAll append the suffix.
-		var suffix string
+
+		// build suffix:
+		// - for prefix matches append the method/name suffix
+		// - for match-all use full entrypoint
+		suffix := entrypoint
 		if r.Kind == routing.RoutePrefix {
-			suffix = entrypoint[len(r.Prefix)-1:] // include the leading "/"
-		} else {
-			suffix = entrypoint
+			pref := r.Prefix
+			if strings.HasSuffix(pref, "/") {
+				pref = pref[:len(pref)-1]
+			}
+			suffix = ""
+			if len(entrypoint) > len(pref) {
+				suffix = entrypoint[len(pref):]
+			}
 		}
+
 		return path.Join(dest, suffix), true
 	}
 	return "", false

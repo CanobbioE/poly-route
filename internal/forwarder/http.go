@@ -89,7 +89,8 @@ func (x *HTTPForwarder) Handler() http.HandlerFunc {
 
 		resolvedRegion, err := x.regionResolver.ResolveRegion(r.Context(), region)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			x.log.Error("region resolver failed", "error", err)
+			http.Error(w, "failed to resolve region", http.StatusBadRequest)
 			return
 		}
 
@@ -122,7 +123,8 @@ func (x *HTTPForwarder) FindBackend(entrypoint, region string) (string, bool) {
 				continue
 			}
 		case routing.RoutePrefix:
-			if !strings.HasPrefix(entrypoint, r.Prefix+"/") {
+			// accept either exact equality or prefix + '/'
+			if entrypoint != r.Prefix && !strings.HasPrefix(entrypoint, r.Prefix+"/") {
 				continue
 			}
 		case routing.RouteMatchAll:
@@ -138,6 +140,7 @@ func (x *HTTPForwarder) FindBackend(entrypoint, region string) (string, bool) {
 			return dest, true
 		}
 
+		// for prefix matches, append the suffix only if present
 		suffix := entrypoint[len(r.Prefix):]
 		if r.Kind == routing.RouteMatchAll {
 			suffix = entrypoint
