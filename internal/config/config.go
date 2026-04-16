@@ -24,8 +24,8 @@ const (
 
 	// RegionResolverTypeHTTP identifies the HTTP region resolver.
 	RegionResolverTypeHTTP = "http"
-	// RegionResolverTypeHStatic identifies the static region resolver.
-	RegionResolverTypeHStatic = "static"
+	// RegionResolverTypeStatic identifies the static region resolver.
+	RegionResolverTypeStatic = "static"
 )
 
 // ProtocolCfg configures the incoming and outgoing proxy requests for a Protocol.
@@ -118,13 +118,13 @@ func (r *RegionRetriever) validate() error {
 		if err := r.RegionResolver.validate(); err != nil {
 			return fmt.Errorf("region_resolver: %w", err)
 		}
-	case RegionResolverTypeHStatic:
+	case RegionResolverTypeStatic:
 		if r.Static == "" {
-			return errors.New("static value must be defined when type is \"" + RegionResolverTypeHStatic + "\"")
+			return errors.New("static value must be defined when type is \"" + RegionResolverTypeStatic + "\"")
 		}
 	default:
 		return errors.New("unknown type \"" + r.Type + "\", must be \"" + RegionResolverTypeHTTP +
-			"\" or \"" + RegionResolverTypeHStatic + "\"")
+			"\" or \"" + RegionResolverTypeStatic + "\"")
 	}
 
 	return nil
