@@ -145,6 +145,7 @@ func (x *GRPCForwarder) forwardGRPCStream(
 	cli2SrvErrCh := forwardStream(ctx, clientStream, serverStream)
 	srv2CliErrCh := forwardStream(ctx, serverStream, clientStream)
 
+	// run twice to ensure we capture both directions of the stream
 	for range 2 {
 		select {
 		case s2cErr := <-srv2CliErrCh:
