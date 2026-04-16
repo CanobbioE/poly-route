@@ -42,6 +42,7 @@ type RegionRetriever struct {
 	Method         string          `yaml:"method"`
 	QueryParam     string          `yaml:"query_param"`
 	Static         string          `yaml:"static"`
+	Timeout        string          `yaml:"timeout"`
 }
 
 // RegionResolver configures how to resolve the region value retrieved from the RegionRetriever.

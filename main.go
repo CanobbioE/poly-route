@@ -35,7 +35,10 @@ func main() {
 		return
 	}
 
-	regionResolver, err := routing.NewResolver(cfg.RegionRetriever)
+	regionResolver, err := routing.NewResolver(
+		cfg.RegionRetriever,
+		routing.WithHTTPClient(&http.Client{Timeout: 3 * time.Second}),
+	)
 	if err != nil {
 		log.Error("failed to create region resolver", "error", err)
 		return

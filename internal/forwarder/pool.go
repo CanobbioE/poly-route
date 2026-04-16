@@ -1,9 +1,11 @@
 package forwarder
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
@@ -27,13 +29,26 @@ func NewConnectionPool(opts ...grpc.DialOption) *ConnectionPool {
 }
 
 // Get returns a healthy cached connection for addr, or dials a new one.
-func (p *ConnectionPool) Get(addr string) (*grpc.ClientConn, error) {
-	// an open connection already exists, return it
+func (p *ConnectionPool) Get(ctx context.Context, addr string) (*grpc.ClientConn, error) {
+	// an open connection already exists, return it if ready
 	p.mu.RLock()
 	conn, ok := p.conns[addr]
 	p.mu.RUnlock()
+
 	if ok && conn.GetState() != connectivity.Shutdown {
-		return conn, nil
+		if conn.GetState() == connectivity.Ready {
+			return conn, nil
+		}
+		// give the connection a short chance to reach READY
+		waitCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		defer cancel()
+		state := conn.GetState()
+		if conn.WaitForStateChange(waitCtx, state) {
+			if conn.GetState() == connectivity.Ready {
+				return conn, nil
+			}
+		}
+		// otherwise we'll recreate the connection below to avoid using unhealthy connections
 	}
 
 	// lock for dialing
@@ -46,11 +61,12 @@ func (p *ConnectionPool) Get(addr string) (*grpc.ClientConn, error) {
 		return conn, nil
 	}
 
-	// ensure connection is closed
+	// ensure connection is closed if present
 	if ok {
 		_ = conn.Close()
 	}
 
+	// dial a fresh connection using the provided dial options and context
 	newConn, err := grpc.NewClient(addr, p.dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("conn pool: dial %s: %w", addr, err)

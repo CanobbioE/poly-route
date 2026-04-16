@@ -223,10 +223,7 @@ func (x *GRPCForwarder) FindBackend(entrypoint, region string) (string, bool) {
 			}
 			// ensure there is at most one '/' after prefix
 			// compute rest after the logical prefix (strip trailing slash if present)
-			pref := r.Prefix
-			if strings.HasSuffix(pref, "/") {
-				pref = pref[:len(pref)-1]
-			}
+			pref := strings.TrimSuffix(r.Prefix, "/")
 			rest := entrypoint[len(pref):]
 			if strings.Count(rest, "/") > 1 {
 				continue
@@ -246,13 +243,10 @@ func (x *GRPCForwarder) FindBackend(entrypoint, region string) (string, bool) {
 
 		// build suffix:
 		// - for prefix matches append the method/name suffix
-		// - for match-all use full entrypoint
+		// - for match-all use the full entrypoint
 		suffix := entrypoint
 		if r.Kind == routing.RoutePrefix {
-			pref := r.Prefix
-			if strings.HasSuffix(pref, "/") {
-				pref = pref[:len(pref)-1]
-			}
+			pref := strings.TrimSuffix(r.Prefix, "/")
 			suffix = ""
 			if len(entrypoint) > len(pref) {
 				suffix = entrypoint[len(pref):]

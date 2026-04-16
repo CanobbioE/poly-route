@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
+	"time"
 
 	"github.com/CanobbioE/poly-route/internal/config"
 )
@@ -53,7 +55,7 @@ func NewResolver(cfg *config.RegionRetriever, opts ...ResolverOption) (RegionRes
 	switch cfg.Type {
 	case config.RegionResolverTypeHTTP:
 		return newHTTPResolver(cfg, opts...), nil
-	case config.RegionResolverTypeHStatic:
+	case config.RegionResolverTypeStatic:
 		return newStaticResolver(cfg), nil
 	default:
 		return nil, fmt.Errorf("unknown resolver type: %s", cfg.Type)
@@ -69,10 +71,15 @@ func (x *staticResolver) ResolveRegion(_ context.Context, _ string) (string, err
 }
 
 func newHTTPResolver(cfg *config.RegionRetriever, options ...ResolverOption) RegionResolver {
+	timeout, err := time.ParseDuration(cfg.Timeout)
+	if err != nil || timeout == 0 {
+		timeout = 3 * time.Second
+	}
+
 	r := &httpResolver{
 		retrieverCfg: cfg,
 		resolverCfg:  cfg.RegionResolver,
-		client:       http.DefaultClient,
+		client:       &http.Client{Timeout: timeout},
 	}
 
 	for _, option := range options {
@@ -84,7 +91,6 @@ func newHTTPResolver(cfg *config.RegionRetriever, options ...ResolverOption) Reg
 
 func (x *httpResolver) ResolveRegion(ctx context.Context, param string) (string, error) {
 	var resp *http.Response
-
 	switch x.retrieverCfg.Method {
 	case http.MethodGet:
 		u, err := url.Parse(x.retrieverCfg.URL)
@@ -100,8 +106,6 @@ func (x *httpResolver) ResolveRegion(ctx context.Context, param string) (string,
 			return "", fmt.Errorf("region resolver: failed to create GET request: %w", err)
 		}
 
-		// URL is loaded from a static configuration file.
-		// This prevents arbitrary SSRF as only pre-defined URLs are reachable.
 		resp, err = x.client.Do(req)
 		if err != nil {
 			return "", fmt.Errorf("region resolver: failed to send GET request: %w", err)
@@ -138,16 +142,23 @@ func (x *httpResolver) ResolveRegion(ctx context.Context, param string) (string,
 }
 
 func (x *httpResolver) resolve(m map[string]any) (string, error) {
-	// TODO: handle nested keys like info.location.region.short_code
-	regionKey, ok := m[x.resolverCfg.Field]
-	if !ok {
-		// TODO: handle `default` value: if specified, use that
-		return "", fmt.Errorf("region not found at %s", x.resolverCfg.Field)
+	// support nested fields using dot notation (e.g. info.location.region.short_code)
+	parts := strings.Split(x.resolverCfg.Field, ".")
+	var cur any = m
+	for _, p := range parts {
+		mp, ok := cur.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("region at %s is not a nested object", x.resolverCfg.Field)
+		}
+		v, ok := mp[p]
+		if !ok {
+			return "", fmt.Errorf("region not found at %s", x.resolverCfg.Field)
+		}
+		cur = v
 	}
-
-	key, ok := regionKey.(string)
+	key, ok := cur.(string)
 	if !ok {
-		return "", fmt.Errorf("region at %s is not a string (%T)", x.resolverCfg.Field, regionKey)
+		return "", fmt.Errorf("region at %s is not a string (%T)", x.resolverCfg.Field, cur)
 	}
 
 	region, ok := x.resolverCfg.Mapping[key]

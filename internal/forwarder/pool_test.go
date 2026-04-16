@@ -1,6 +1,7 @@
 package forwarder_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -11,8 +12,6 @@ import (
 	"github.com/CanobbioE/poly-route/internal/forwarder"
 )
 
-// dialOpts used by all pool tests — insecure, no actual backend required
-// because grpc.NewClient is non-blocking (it dials lazily).
 var testDialOpts = []grpc.DialOption{
 	grpc.WithTransportCredentials(insecure.NewCredentials()),
 }
@@ -21,11 +20,11 @@ func TestConnPool_Get(t *testing.T) {
 	t.Run("returns same connection", func(t *testing.T) {
 		pool := forwarder.NewConnectionPool(testDialOpts...)
 
-		c1, err := pool.Get("localhost:19999")
+		c1, err := pool.Get(context.Background(), "localhost:19999")
 		if err != nil {
 			t.Fatalf("first get: %v", err)
 		}
-		c2, err := pool.Get("localhost:19999")
+		c2, err := pool.Get(context.Background(), "localhost:19999")
 		if err != nil {
 			t.Fatalf("second get: %v", err)
 		}
@@ -37,7 +36,7 @@ func TestConnPool_Get(t *testing.T) {
 	t.Run("replaces shutdown connection", func(t *testing.T) {
 		pool := forwarder.NewConnectionPool(testDialOpts...)
 
-		c1, err := pool.Get("localhost:19998")
+		c1, err := pool.Get(context.Background(), "localhost:19998")
 		if err != nil {
 			t.Fatalf("first get: %v", err)
 		}
@@ -47,7 +46,7 @@ func TestConnPool_Get(t *testing.T) {
 			t.Fatalf("first close: %v", err)
 		}
 
-		c2, err := pool.Get("localhost:19998")
+		c2, err := pool.Get(context.Background(), "localhost:19998")
 		if err != nil {
 			t.Fatalf("get after shutdown: %v", err)
 		}
@@ -62,11 +61,11 @@ func TestConnPool_Get(t *testing.T) {
 	t.Run("returns different connection", func(t *testing.T) {
 		pool := forwarder.NewConnectionPool(testDialOpts...)
 
-		c1, err := pool.Get("localhost:19997")
+		c1, err := pool.Get(context.Background(), "localhost:19997")
 		if err != nil {
 			t.Fatalf("get addr1: %v", err)
 		}
-		c2, err := pool.Get("localhost:19996")
+		c2, err := pool.Get(context.Background(), "localhost:19996")
 		if err != nil {
 			t.Fatalf("get addr2: %v", err)
 		}
@@ -86,7 +85,7 @@ func TestConnPool_Get(t *testing.T) {
 		for i := range goroutines {
 			go func(idx int) {
 				defer wg.Done()
-				c, err := pool.Get("localhost:19995")
+				c, err := pool.Get(context.Background(), "localhost:19995")
 				if err != nil {
 					t.Errorf("goroutine %d: %v", idx, err)
 					return
@@ -114,7 +113,7 @@ func TestConnPool_CloseAll(t *testing.T) {
 
 	addrs := []string{"localhost:19994", "localhost:19993", "localhost:19992"}
 	for _, addr := range addrs {
-		if _, err := pool.Get(addr); err != nil {
+		if _, err := pool.Get(context.Background(), addr); err != nil {
 			t.Fatalf("get %s: %v", addr, err)
 		}
 	}
@@ -124,7 +123,7 @@ func TestConnPool_CloseAll(t *testing.T) {
 	}
 
 	// after CloseAll, getting a connection should succeed (pool dials fresh ones).
-	c, err := pool.Get(addrs[0])
+	c, err := pool.Get(context.Background(), addrs[0])
 	if err != nil {
 		t.Fatalf("get after CloseAll: %v", err)
 	}
